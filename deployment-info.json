@@ -1,0 +1,13 @@
+{
+  "programId": "3vBTeKk5TZ3y8HMEwD3S3J6Mh4zfvuwt8PE1jSjsNqCe",
+  "mint": "CPU9nktk1otUYDgkqpS9uMg8mHkNN7J7snQD3CYiCTQb",
+  "metadata": "4FuNJDBhQPqK4TfG3NmFiWxyX5bWfH21CuTHjZxfAJtF",
+  "statePda": "6d1fWrqVcgtrGausPePxUL4GENy1NjXJ4fQMGDsYKaPS",
+  "tokenAccount": "iJ1hmv9KCksgv4dgaZgFRhLadW6pLtcbEjPUNo9PSoo",
+  "totalSupply": 100000000000,
+  "decimals": 6,
+  "name": "NC Token",
+  "symbol": "NCT",
+  "network": "https://api.devnet.solana.com",
+  "deployedAt": "2025-12-26T10:23:31.748Z"
+}
