@@ -32,6 +32,8 @@ pub mod spl_project {
         state.emergency_paused = false;
         state.sell_limit_percent = 10; // 10% sell limit
         state.sell_limit_period = 86400; // 24 hours in seconds
+        state.bridge_address = Pubkey::default(); // Will be set by governance later
+        state.bond_address = Pubkey::default(); // Will be set by governance later
 
         msg!("Token program initialized by: {:?}", state.authority);
         Ok(())
@@ -141,13 +143,60 @@ pub mod spl_project {
         Ok(())
     }
 
-    // Mint Token
+    // Set bridge address (only governance can call this)
+    pub fn set_bridge_address(
+        ctx: Context<SetBridgeAddress>,
+        bridge_address: Pubkey,
+    ) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        require!(
+            state.authority == ctx.accounts.governance.key(),
+            TokenError::Unauthorized
+        );
+        let old_bridge = state.bridge_address;
+        state.bridge_address = bridge_address;
+        msg!(
+            "Bridge address updated from {:?} to {:?}",
+            old_bridge,
+            bridge_address
+        );
+        Ok(())
+    }
 
+    // Set bond address (only governance can call this)
+    pub fn set_bond_address(
+        ctx: Context<SetBondAddress>,
+        bond_address: Pubkey,
+    ) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        require!(
+            state.authority == ctx.accounts.governance.key(),
+            TokenError::Unauthorized
+        );
+        let old_bond = state.bond_address;
+        state.bond_address = bond_address;
+        msg!(
+            "Bond address updated from {:?} to {:?}",
+            old_bond,
+            bond_address
+        );
+        Ok(())
+    }
+
+    // Mint Token (only governance can call this)
     pub fn mint_tokens(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
+        let state = &ctx.accounts.state;
+        
+        // Verify that the caller is the governance authority
+        require!(
+            state.authority == ctx.accounts.governance.key(),
+            TokenError::Unauthorized
+        );
+
         msg!("Minting {} tokens", amount);
 
         // Create PDA signer
-        let bump = ctx.accounts.state.bump;
+        let bump = state.bump;
         let state_seed = b"state";
         let bump_seed = [bump];
         let seeds = &[state_seed.as_ref(), &bump_seed[..]];
@@ -170,8 +219,16 @@ pub mod spl_project {
         msg!("Successfully minted {} tokens", amount);
         Ok(())
     }
-    // Burn Token
+    // Burn Token (only governance can call this)
     pub fn burn_tokens(ctx: Context<BurnTokens>, amount: u64) -> Result<()> {
+        let state = &ctx.accounts.state;
+        
+        // Verify that the caller is the governance authority
+        require!(
+            state.authority == ctx.accounts.governance.key(),
+            TokenError::Unauthorized
+        );
+
         msg!("Burning {} tokens", amount);
 
         token::burn(
@@ -330,7 +387,8 @@ pub struct SetGovernance<'info> {
 pub struct MintTokens<'info> {
     #[account(
         seeds = [b"state"],
-        bump = state.bump
+        bump = state.bump,
+        constraint = state.authority == governance.key() @ TokenError::Unauthorized
     )]
     pub state: Account<'info, TokenState>,
 
@@ -342,12 +400,22 @@ pub struct MintTokens<'info> {
     #[account(mut)]
     pub to: UncheckedAccount<'info>,
 
+    /// CHECK: Governance program or authority (validated by constraint)
+    pub governance: Signer<'info>,
+
     pub token_program: Program<'info, Token>,
 }
 
 // BurnTokens
 #[derive(Accounts)]
 pub struct BurnTokens<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+        constraint = state.authority == governance.key() @ TokenError::Unauthorized
+    )]
+    pub state: Account<'info, TokenState>,
+
     /// CHECK: SPL Token mint account (validated by token program)
     #[account(mut)]
     pub mint: UncheckedAccount<'info>,
@@ -355,6 +423,9 @@ pub struct BurnTokens<'info> {
     /// CHECK: SPL Token account (validated by token program)
     #[account(mut)]
     pub from: UncheckedAccount<'info>,
+
+    /// CHECK: Governance program or authority (validated by constraint)
+    pub governance: Signer<'info>,
 
     pub authority: Signer<'info>,
 
@@ -424,10 +495,12 @@ pub struct TokenState {
     pub emergency_paused: bool,
     pub sell_limit_percent: u8, // 10% = 10
     pub sell_limit_period: u64, // 24 hours in seconds = 86400
+    pub bridge_address: Pubkey, // Bridge contract address (set by governance)
+    pub bond_address: Pubkey,   // Bond contract address (set by governance)
 }
 
 impl TokenState {
-    pub const LEN: usize = 8 + 32 + 1 + 1 + 1 + 8; // [8 discriminator + 32 Pubkey + 1 u8 + 1 bool + 1 u8 + 8 u64]
+    pub const LEN: usize = 8 + 32 + 1 + 1 + 1 + 8 + 32 + 32; // [8 discriminator + 32 Pubkey + 1 u8 + 1 bool + 1 u8 + 8 u64 + 32 bridge + 32 bond]
 }
 
 #[account]
@@ -659,4 +732,32 @@ pub struct SetLiquidityPool<'info> {
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetBridgeAddress<'info> {
+    #[account(
+        mut,
+        seeds = [b"state"],
+        bump = state.bump,
+        constraint = state.authority == governance.key() @ TokenError::Unauthorized
+    )]
+    pub state: Account<'info, TokenState>,
+
+    /// CHECK: Governance program or authority (validated by constraint)
+    pub governance: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetBondAddress<'info> {
+    #[account(
+        mut,
+        seeds = [b"state"],
+        bump = state.bump,
+        constraint = state.authority == governance.key() @ TokenError::Unauthorized
+    )]
+    pub state: Account<'info, TokenState>,
+
+    /// CHECK: Governance program or authority (validated by constraint)
+    pub governance: Signer<'info>,
 }

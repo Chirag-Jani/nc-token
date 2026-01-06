@@ -288,6 +288,92 @@ pub mod governance {
         Ok(tx_id)
     }
 
+    /// Queue a transaction to set bridge address
+    pub fn queue_set_bridge_address(
+        ctx: Context<QueueSetBridgeAddress>,
+        bridge_address: Pubkey,
+    ) -> Result<u64> {
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.token_program_set,
+            GovernanceError::TokenProgramNotSet
+        );
+
+        let tx_id = governance_state.next_transaction_id;
+        governance_state.next_transaction_id += 1;
+
+        let clock = Clock::get()?;
+        let execute_after = clock.unix_timestamp + governance_state.cooldown_period;
+
+        let mut data = Vec::new();
+        data.extend_from_slice(&bridge_address.to_bytes());
+
+        let transaction = &mut ctx.accounts.transaction;
+        transaction.id = tx_id;
+        transaction.tx_type = TransactionType::SetBridgeAddress;
+        transaction.status = TransactionStatus::Pending;
+        transaction.initiator = ctx.accounts.initiator.key();
+        transaction.target = bridge_address;
+        transaction.data = data;
+        transaction.timestamp = clock.unix_timestamp;
+        transaction.execute_after = execute_after;
+        transaction.approval_count = 0;
+        transaction.approvals = vec![];
+        transaction.rejection_reason = String::new();
+        transaction.rejector = Pubkey::default();
+
+        msg!(
+            "Transaction {} queued (set bridge address: {}), will execute after {}",
+            tx_id,
+            bridge_address,
+            execute_after
+        );
+        Ok(tx_id)
+    }
+
+    /// Queue a transaction to set bond address
+    pub fn queue_set_bond_address(
+        ctx: Context<QueueSetBondAddress>,
+        bond_address: Pubkey,
+    ) -> Result<u64> {
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.token_program_set,
+            GovernanceError::TokenProgramNotSet
+        );
+
+        let tx_id = governance_state.next_transaction_id;
+        governance_state.next_transaction_id += 1;
+
+        let clock = Clock::get()?;
+        let execute_after = clock.unix_timestamp + governance_state.cooldown_period;
+
+        let mut data = Vec::new();
+        data.extend_from_slice(&bond_address.to_bytes());
+
+        let transaction = &mut ctx.accounts.transaction;
+        transaction.id = tx_id;
+        transaction.tx_type = TransactionType::SetBondAddress;
+        transaction.status = TransactionStatus::Pending;
+        transaction.initiator = ctx.accounts.initiator.key();
+        transaction.target = bond_address;
+        transaction.data = data;
+        transaction.timestamp = clock.unix_timestamp;
+        transaction.execute_after = execute_after;
+        transaction.approval_count = 0;
+        transaction.approvals = vec![];
+        transaction.rejection_reason = String::new();
+        transaction.rejector = Pubkey::default();
+
+        msg!(
+            "Transaction {} queued (set bond address: {}), will execute after {}",
+            tx_id,
+            bond_address,
+            execute_after
+        );
+        Ok(tx_id)
+    }
+
     /// Queue a transaction to set required approvals (CRITICAL: Must use multisig)
     pub fn queue_set_required_approvals(
         ctx: Context<QueueSetRequiredApprovals>,
@@ -600,6 +686,48 @@ pub mod governance {
                     period
                 );
             }
+            TransactionType::SetBridgeAddress => {
+                if transaction.data.len() < 32 {
+                    return Err(GovernanceError::InvalidAccount.into());
+                }
+                let bridge_address = Pubkey::try_from_slice(&transaction.data[0..32])
+                    .map_err(|_| GovernanceError::InvalidAccount)?;
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetBridgeAddress {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_bridge_address(cpi_ctx, bridge_address)?;
+                msg!("Transaction {} executed: SetBridgeAddress = {}", tx_id, bridge_address);
+            }
+            TransactionType::SetBondAddress => {
+                if transaction.data.len() < 32 {
+                    return Err(GovernanceError::InvalidAccount.into());
+                }
+                let bond_address = Pubkey::try_from_slice(&transaction.data[0..32])
+                    .map_err(|_| GovernanceError::InvalidAccount)?;
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetBondAddress {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_bond_address(cpi_ctx, bond_address)?;
+                msg!("Transaction {} executed: SetBondAddress = {}", tx_id, bond_address);
+            }
         }
 
         // Mark transaction as executed
@@ -785,6 +913,8 @@ pub enum TransactionType {
     Pair,
     SetRequiredApprovals,
     SetCooldownPeriod,
+    SetBridgeAddress,
+    SetBondAddress,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
@@ -1172,6 +1302,56 @@ pub struct QueueSetRequiredApprovals<'info> {
 
 #[derive(Accounts)]
 pub struct QueueSetCooldownPeriod<'info> {
+    #[account(
+        mut,
+        seeds = [b"governance"],
+        bump = governance_state.bump
+    )]
+    pub governance_state: Account<'info, GovernanceState>,
+
+    #[account(
+        init,
+        payer = initiator,
+        space = 8 + Transaction::MAX_LEN,
+        seeds = [b"transaction", governance_state.next_transaction_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub transaction: Account<'info, Transaction>,
+
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+}
+
+#[derive(Accounts)]
+pub struct QueueSetBridgeAddress<'info> {
+    #[account(
+        mut,
+        seeds = [b"governance"],
+        bump = governance_state.bump
+    )]
+    pub governance_state: Account<'info, GovernanceState>,
+
+    #[account(
+        init,
+        payer = initiator,
+        space = 8 + Transaction::MAX_LEN,
+        seeds = [b"transaction", governance_state.next_transaction_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub transaction: Account<'info, Transaction>,
+
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+}
+
+#[derive(Accounts)]
+pub struct QueueSetBondAddress<'info> {
     #[account(
         mut,
         seeds = [b"governance"],
