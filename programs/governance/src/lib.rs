@@ -5,6 +5,9 @@ declare_id!("5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj");
 // Import token program (for later CPI integration)
 #[allow(unused_imports)]
 use spl_project::program::SplProject;
+// Import presale program (for treasury management)
+#[allow(unused_imports)]
+use presale::program::Presale;
 
 #[program]
 pub mod governance {
@@ -43,6 +46,10 @@ pub mod governance {
         governance_state.required_approvals = required_approvals;
         governance_state.cooldown_period = cooldown_period;
         governance_state.next_transaction_id = 1;
+        governance_state.token_program = Pubkey::default();
+        governance_state.token_program_set = false;
+        governance_state.presale_program = Pubkey::default();
+        governance_state.presale_program_set = false;
         governance_state.bump = ctx.bumps.governance_state;
         governance_state.signers = signers;
 
@@ -65,6 +72,19 @@ pub mod governance {
         governance_state.token_program = token_program;
         governance_state.token_program_set = true;
         msg!("Token program set to: {}", token_program);
+        Ok(())
+    }
+
+    /// Set the presale program address
+    pub fn set_presale_program(ctx: Context<SetPresaleProgram>, presale_program: Pubkey) -> Result<()> {
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            !governance_state.presale_program_set,
+            GovernanceError::PresaleProgramAlreadySet
+        );
+        governance_state.presale_program = presale_program;
+        governance_state.presale_program_set = true;
+        msg!("Presale program set to: {}", presale_program);
         Ok(())
     }
 
@@ -369,6 +389,92 @@ pub mod governance {
             "Transaction {} queued (set bond address: {}), will execute after {}",
             tx_id,
             bond_address,
+            execute_after
+        );
+        Ok(tx_id)
+    }
+
+    /// Queue a transaction to set treasury address
+    pub fn queue_set_treasury_address(
+        ctx: Context<QueueSetTreasuryAddress>,
+        treasury_address: Pubkey,
+    ) -> Result<u64> {
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.presale_program_set,
+            GovernanceError::PresaleProgramNotSet
+        );
+
+        let tx_id = governance_state.next_transaction_id;
+        governance_state.next_transaction_id += 1;
+
+        let clock = Clock::get()?;
+        let execute_after = clock.unix_timestamp + governance_state.cooldown_period;
+
+        let mut data = Vec::new();
+        data.extend_from_slice(&treasury_address.to_bytes());
+
+        let transaction = &mut ctx.accounts.transaction;
+        transaction.id = tx_id;
+        transaction.tx_type = TransactionType::SetTreasuryAddress;
+        transaction.status = TransactionStatus::Pending;
+        transaction.initiator = ctx.accounts.initiator.key();
+        transaction.target = treasury_address;
+        transaction.data = data;
+        transaction.timestamp = clock.unix_timestamp;
+        transaction.execute_after = execute_after;
+        transaction.approval_count = 0;
+        transaction.approvals = vec![];
+        transaction.rejection_reason = String::new();
+        transaction.rejector = Pubkey::default();
+
+        msg!(
+            "Transaction {} queued (set treasury address: {}), will execute after {}",
+            tx_id,
+            treasury_address,
+            execute_after
+        );
+        Ok(tx_id)
+    }
+
+    /// Queue a transaction to withdraw to treasury
+    pub fn queue_withdraw_to_treasury(
+        ctx: Context<QueueWithdrawToTreasury>,
+        amount: u64,
+    ) -> Result<u64> {
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.presale_program_set,
+            GovernanceError::PresaleProgramNotSet
+        );
+
+        let tx_id = governance_state.next_transaction_id;
+        governance_state.next_transaction_id += 1;
+
+        let clock = Clock::get()?;
+        let execute_after = clock.unix_timestamp + governance_state.cooldown_period;
+
+        let mut data = Vec::new();
+        data.extend_from_slice(&amount.to_le_bytes());
+
+        let transaction = &mut ctx.accounts.transaction;
+        transaction.id = tx_id;
+        transaction.tx_type = TransactionType::WithdrawToTreasury;
+        transaction.status = TransactionStatus::Pending;
+        transaction.initiator = ctx.accounts.initiator.key();
+        transaction.target = Pubkey::default();
+        transaction.data = data;
+        transaction.timestamp = clock.unix_timestamp;
+        transaction.execute_after = execute_after;
+        transaction.approval_count = 0;
+        transaction.approvals = vec![];
+        transaction.rejection_reason = String::new();
+        transaction.rejector = Pubkey::default();
+
+        msg!(
+            "Transaction {} queued (withdraw to treasury: {}), will execute after {}",
+            tx_id,
+            amount,
             execute_after
         );
         Ok(tx_id)
@@ -728,6 +834,57 @@ pub mod governance {
                 spl_project::cpi::set_bond_address(cpi_ctx, bond_address)?;
                 msg!("Transaction {} executed: SetBondAddress = {}", tx_id, bond_address);
             }
+            TransactionType::SetTreasuryAddress => {
+                if transaction.data.len() < 32 {
+                    return Err(GovernanceError::InvalidAccount.into());
+                }
+                let treasury_address = Pubkey::try_from_slice(&transaction.data[0..32])
+                    .map_err(|_| GovernanceError::InvalidAccount)?;
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.presale_program_program.to_account_info();
+                let cpi_accounts = presale::cpi::accounts::SetTreasuryAddress {
+                    presale_state: ctx.accounts.presale_state_pda.to_account_info(),
+                    authority: ctx.accounts.governance_state.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                presale::cpi::set_treasury_address(cpi_ctx, treasury_address)?;
+                msg!("Transaction {} executed: SetTreasuryAddress = {}", tx_id, treasury_address);
+            }
+            TransactionType::WithdrawToTreasury => {
+                if transaction.data.len() < 8 {
+                    return Err(GovernanceError::InvalidAccount.into());
+                }
+                let amount = u64::from_le_bytes(
+                    transaction.data[0..8]
+                        .try_into()
+                        .map_err(|_| GovernanceError::InvalidAccount)?,
+                );
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.presale_program_program.to_account_info();
+                let cpi_accounts = presale::cpi::accounts::WithdrawToTreasury {
+                    presale_state: ctx.accounts.presale_state_pda.to_account_info(),
+                    authority: ctx.accounts.governance_state.to_account_info(),
+                    presale_payment_vault_pda: ctx.accounts.presale_payment_vault_pda.to_account_info(),
+                    presale_payment_vault: ctx.accounts.presale_payment_vault.to_account_info(),
+                    treasury_token_account: ctx.accounts.treasury_token_account.to_account_info(),
+                    payment_token_mint: ctx.accounts.payment_token_mint.to_account_info(),
+                    token_program: ctx.accounts.spl_token_program.to_account_info(),
+                    associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                presale::cpi::withdraw_to_treasury(cpi_ctx, amount)?;
+                msg!("Transaction {} executed: WithdrawToTreasury = {}", tx_id, amount);
+            }
         }
 
         // Mark transaction as executed
@@ -846,12 +1003,14 @@ pub struct GovernanceState {
     pub next_transaction_id: u64,
     pub token_program: Pubkey,
     pub token_program_set: bool,
+    pub presale_program: Pubkey,
+    pub presale_program_set: bool,
     pub bump: u8,
     pub signers: Vec<Pubkey>, // Authorized signers (max 10)
 }
 
 impl GovernanceState {
-    pub const LEN: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 1 + 4 + (32 * 10); // discriminator + fields + vec overhead + max 10 signers
+    pub const LEN: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 32 + 1 + 1 + 4 + (32 * 10); // discriminator + fields + vec overhead + max 10 signers
     pub const MIN_REQUIRED_APPROVALS: u8 = 2;
     pub const MIN_COOLDOWN_SECONDS: i64 = 1800; // 30 minutes
     pub const MAX_SIGNERS: usize = 10;
@@ -915,6 +1074,8 @@ pub enum TransactionType {
     SetCooldownPeriod,
     SetBridgeAddress,
     SetBondAddress,
+    SetTreasuryAddress,
+    WithdrawToTreasury,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
@@ -937,6 +1098,10 @@ pub enum GovernanceError {
     TokenProgramNotSet,
     #[msg("Token program already set")]
     TokenProgramAlreadySet,
+    #[msg("Presale program not set")]
+    PresaleProgramNotSet,
+    #[msg("Presale program already set")]
+    PresaleProgramAlreadySet,
     #[msg("Invalid transaction ID")]
     InvalidTransactionId,
     #[msg("Transaction not pending")]
@@ -1190,6 +1355,32 @@ pub struct ExecuteTransaction<'info> {
     /// CHECK: Token program program
     pub token_program_program: Program<'info, spl_project::program::SplProject>,
 
+    /// CHECK: Presale program state PDA (for treasury operations)
+    pub presale_state_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Presale program
+    pub presale_program_program: Program<'info, presale::program::Presale>,
+
+    /// CHECK: Presale payment vault PDA (for withdrawals)
+    pub presale_payment_vault_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Presale payment vault ATA
+    #[account(mut)]
+    pub presale_payment_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Treasury token account ATA
+    #[account(mut)]
+    pub treasury_token_account: UncheckedAccount<'info>,
+
+    /// CHECK: Payment token mint
+    pub payment_token_mint: UncheckedAccount<'info>,
+
+    /// CHECK: SPL Token program (for withdrawals)
+    pub spl_token_program: UncheckedAccount<'info>,
+
+    /// CHECK: Associated token program
+    pub associated_token_program: UncheckedAccount<'info>,
+
     /// CHECK: System program (needed for CPI account creation)
     pub system_program: Program<'info, System>,
 
@@ -1373,6 +1564,69 @@ pub struct QueueSetBondAddress<'info> {
 
     pub system_program: Program<'info, System>,
     pub clock: Sysvar<'info, Clock>,
+}
+
+#[derive(Accounts)]
+pub struct QueueSetTreasuryAddress<'info> {
+    #[account(
+        mut,
+        seeds = [b"governance"],
+        bump = governance_state.bump
+    )]
+    pub governance_state: Account<'info, GovernanceState>,
+
+    #[account(
+        init,
+        payer = initiator,
+        space = 8 + Transaction::MAX_LEN,
+        seeds = [b"transaction", governance_state.next_transaction_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub transaction: Account<'info, Transaction>,
+
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+}
+
+#[derive(Accounts)]
+pub struct QueueWithdrawToTreasury<'info> {
+    #[account(
+        mut,
+        seeds = [b"governance"],
+        bump = governance_state.bump
+    )]
+    pub governance_state: Account<'info, GovernanceState>,
+
+    #[account(
+        init,
+        payer = initiator,
+        space = 8 + Transaction::MAX_LEN,
+        seeds = [b"transaction", governance_state.next_transaction_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub transaction: Account<'info, Transaction>,
+
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+}
+
+#[derive(Accounts)]
+pub struct SetPresaleProgram<'info> {
+    #[account(
+        mut,
+        seeds = [b"governance"],
+        bump = governance_state.bump,
+        constraint = governance_state.authority == authority.key() @ GovernanceError::Unauthorized
+    )]
+    pub governance_state: Account<'info, GovernanceState>,
+
+    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]

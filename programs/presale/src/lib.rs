@@ -5,8 +5,8 @@ use anchor_spl::associated_token::AssociatedToken;
 // Import token and governance programs for CPI integration
 #[allow(unused_imports)]
 use spl_project::program::SplProject;
-#[allow(unused_imports)]
-use governance::program::Governance;
+// #[allow(unused_imports)]
+// use governance::program::Governance;
 
 declare_id!("3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp");
 
@@ -33,6 +33,7 @@ pub mod presale {
         presale_state.total_tokens_sold = 0;
         presale_state.total_raised = 0;
         presale_state.governance_set = false;
+        presale_state.treasury_address = Pubkey::default(); // Can be set later via set_treasury_address
         presale_state.bump = ctx.bumps.presale_state;
         
         msg!("Presale initialized with admin: {}, token_program: {}", admin, token_program);
@@ -182,8 +183,55 @@ pub mod presale {
             PresaleError::PaymentTokenNotAllowed
         );
 
+        // Validate token account mints match
+        // Read mint directly from account data (SPL token account layout: mint at offset 0)
+        let buyer_payment_token_data = ctx.accounts.buyer_payment_token_account.try_borrow_data()?;
+        let buyer_token_data = ctx.accounts.buyer_token_account.try_borrow_data()?;
+        
+        require!(
+            buyer_payment_token_data.len() >= 32,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        require!(
+            buyer_token_data.len() >= 32,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        
+        let buyer_payment_mint = Pubkey::try_from_slice(&buyer_payment_token_data[0..32])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        let buyer_token_mint = Pubkey::try_from_slice(&buyer_token_data[0..32])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        
+        require!(
+            buyer_payment_mint == ctx.accounts.payment_token_mint.key(),
+            PresaleError::PaymentTokenNotAllowed
+        );
+        require!(
+            buyer_token_mint == presale_state.presale_token_mint,
+            PresaleError::PaymentTokenNotAllowed
+        );
+
         // Calculate tokens to receive (1:1 ratio - you can modify this)
         let tokens_to_receive = amount; // Adjust based on your pricing logic
+
+        // Validate payment vault mint and authority
+        let payment_vault_data = ctx.accounts.presale_payment_vault.try_borrow_data()?;
+        require!(
+            payment_vault_data.len() >= 64,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        let payment_vault_mint = Pubkey::try_from_slice(&payment_vault_data[0..32])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        let payment_vault_owner = Pubkey::try_from_slice(&payment_vault_data[32..64])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        require!(
+            payment_vault_mint == ctx.accounts.payment_token_mint.key(),
+            PresaleError::PaymentTokenNotAllowed
+        );
+        require!(
+            payment_vault_owner == ctx.accounts.presale_payment_vault_pda.key(),
+            PresaleError::PaymentTokenNotAllowed
+        );
 
         // Transfer payment tokens from buyer to presale vault
         let cpi_accounts = Transfer {
@@ -194,6 +242,25 @@ pub mod presale {
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, amount)?;
+
+        // Validate presale token vault mint and authority
+        let presale_token_vault_data = ctx.accounts.presale_token_vault.try_borrow_data()?;
+        require!(
+            presale_token_vault_data.len() >= 64,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        let vault_mint = Pubkey::try_from_slice(&presale_token_vault_data[0..32])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        let vault_owner = Pubkey::try_from_slice(&presale_token_vault_data[32..64])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+        require!(
+            vault_mint == presale_state.presale_token_mint,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        require!(
+            vault_owner == ctx.accounts.presale_token_vault_pda.key(),
+            PresaleError::PaymentTokenNotAllowed
+        );
 
         // Transfer presale tokens from presale vault to buyer
         let seeds = &[
@@ -229,6 +296,115 @@ pub mod presale {
             amount
         );
 
+        Ok(())
+    }
+
+    // Set treasury address (admin or governance only)
+    pub fn set_treasury_address(
+        ctx: Context<SetTreasuryAddress>,
+        treasury_address: Pubkey,
+    ) -> Result<()> {
+        let presale_state = &mut ctx.accounts.presale_state;
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        let old_treasury = presale_state.treasury_address;
+        presale_state.treasury_address = treasury_address;
+        
+        msg!(
+            "Treasury address updated from {:?} to {:?}",
+            old_treasury,
+            treasury_address
+        );
+        Ok(())
+    }
+
+    // Withdraw payment tokens from PDA vault to treasury address (admin or governance only)
+    pub fn withdraw_to_treasury(
+        ctx: Context<WithdrawToTreasury>,
+        amount: u64,
+    ) -> Result<()> {
+        let presale_state = &ctx.accounts.presale_state;
+        
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        require!(
+            presale_state.treasury_address != Pubkey::default(),
+            PresaleError::TreasuryNotSet
+        );
+        
+        // Validate treasury token account mint and owner
+        // Read account data (SPL token account layout: mint at offset 0, owner at offset 32)
+        let treasury_token_data = ctx.accounts.treasury_token_account.try_borrow_data()?;
+        require!(
+            treasury_token_data.len() >= 64,
+            PresaleError::InvalidTreasuryAccount
+        );
+        let treasury_mint = Pubkey::try_from_slice(&treasury_token_data[0..32])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        let treasury_owner = Pubkey::try_from_slice(&treasury_token_data[32..64])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        require!(
+            treasury_mint == ctx.accounts.payment_token_mint.key(),
+            PresaleError::InvalidTreasuryAccount
+        );
+        require!(
+            treasury_owner == presale_state.treasury_address,
+            PresaleError::InvalidTreasuryAccount
+        );
+        
+        // Validate payment vault mint and authority
+        let payment_vault_data = ctx.accounts.presale_payment_vault.try_borrow_data()?;
+        require!(
+            payment_vault_data.len() >= 64,
+            PresaleError::InvalidTreasuryAccount
+        );
+        let payment_vault_mint = Pubkey::try_from_slice(&payment_vault_data[0..32])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        let payment_vault_owner = Pubkey::try_from_slice(&payment_vault_data[32..64])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        require!(
+            payment_vault_mint == ctx.accounts.payment_token_mint.key(),
+            PresaleError::InvalidTreasuryAccount
+        );
+        require!(
+            payment_vault_owner == ctx.accounts.presale_payment_vault_pda.key(),
+            PresaleError::InvalidTreasuryAccount
+        );
+        
+        // Transfer from PDA vault to treasury
+        let presale_state_key = presale_state.key();
+        let payment_token_mint_key = ctx.accounts.payment_token_mint.key();
+        let seeds = &[
+            b"presale_payment_vault_pda",
+            presale_state_key.as_ref(),
+            payment_token_mint_key.as_ref(),
+            &[ctx.bumps.presale_payment_vault_pda],
+        ];
+        let signer = &[&seeds[..]];
+        
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.presale_payment_vault.to_account_info(),
+            to: ctx.accounts.treasury_token_account.to_account_info(),
+            authority: ctx.accounts.presale_payment_vault_pda.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, amount)?;
+        
+        msg!(
+            "Withdrew {} payment tokens to treasury: {}",
+            amount,
+            presale_state.treasury_address
+        );
+        
         Ok(())
     }
 }
@@ -370,7 +546,7 @@ pub struct Buy<'info> {
     pub presale_state: Account<'info, PresaleState>,
     
     // Token program state to check emergency pause
-    /// CHECK: Token program state PDA (validated by constraint and manual deserialization)
+    /// CHECK: Token program state PDA (validated by constraint)
     #[account(
         constraint = token_state.key() == presale_state.token_program_state @ PresaleError::InvalidTokenProgramState
     )]
@@ -389,11 +565,9 @@ pub struct Buy<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
     
-    #[account(
-        mut,
-        constraint = buyer_payment_token_account.mint == payment_token_mint.key()
-    )]
-    pub buyer_payment_token_account: Account<'info, TokenAccount>,
+    /// CHECK: Buyer's payment token account (validated by constraint in function)
+    #[account(mut)]
+    pub buyer_payment_token_account: UncheckedAccount<'info>,
     
     // PDA that will own the payment token vault ATA
     /// CHECK: This is a PDA used for signing
@@ -408,12 +582,9 @@ pub struct Buy<'info> {
     pub presale_payment_vault_pda: UncheckedAccount<'info>,
     
     // ATA owned by the payment vault PDA
-    #[account(
-        mut,
-        associated_token::mint = payment_token_mint,
-        associated_token::authority = presale_payment_vault_pda
-    )]
-    pub presale_payment_vault: Account<'info, TokenAccount>,
+    /// CHECK: Validated in function (mint and authority checked manually)
+    #[account(mut)]
+    pub presale_payment_vault: UncheckedAccount<'info>,
     
     // PDA that will own the presale token vault ATA
     /// CHECK: This is a PDA used for signing
@@ -427,18 +598,70 @@ pub struct Buy<'info> {
     pub presale_token_vault_pda: UncheckedAccount<'info>,
     
     // ATA owned by the presale token vault PDA
-    #[account(
-        mut,
-        associated_token::mint = presale_state.presale_token_mint,
-        associated_token::authority = presale_token_vault_pda
-    )]
-    pub presale_token_vault: Account<'info, TokenAccount>,
+    /// CHECK: Validated in function (mint and authority checked manually)
+    #[account(mut)]
+    pub presale_token_vault: UncheckedAccount<'info>,
     
+    /// CHECK: Buyer's token account (validated by constraint in function)
+    #[account(mut)]
+    pub buyer_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: Payment token mint account (for validation)
+    pub payment_token_mint: UncheckedAccount<'info>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct SetTreasuryAddress<'info> {
     #[account(
         mut,
-        constraint = buyer_token_account.mint == presale_state.presale_token_mint
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
     )]
-    pub buyer_token_account: Account<'info, TokenAccount>,
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawToTreasury<'info> {
+    #[account(
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+    
+    // PDA that owns the payment token vault ATA
+    /// CHECK: This is a PDA used for signing
+    #[account(
+        seeds = [
+            b"presale_payment_vault_pda",
+            presale_state.key().as_ref(),
+            payment_token_mint.key().as_ref()
+        ],
+        bump
+    )]
+    pub presale_payment_vault_pda: UncheckedAccount<'info>,
+    
+    // ATA owned by the payment vault PDA (source)
+    /// CHECK: Validated in function (mint and authority checked manually)
+    #[account(mut)]
+    pub presale_payment_vault: UncheckedAccount<'info>,
+    
+    // Treasury token account (destination)
+    /// CHECK: Validated in function (mint and authority checked manually)
+    #[account(mut)]
+    pub treasury_token_account: UncheckedAccount<'info>,
     
     /// CHECK: Payment token mint account (for validation)
     pub payment_token_mint: UncheckedAccount<'info>,
@@ -461,12 +684,13 @@ pub struct PresaleState {
     pub total_tokens_sold: u64,
     pub total_raised: u64,
     pub governance_set: bool, // Track if governance has been set
+    pub treasury_address: Pubkey, // Treasury wallet address (settable via set_treasury_address)
     pub bump: u8, // PDA bump
 }
 
 impl PresaleState {
-    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 1; 
-    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + bump
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 1; 
+    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + treasury_address + bump
 }
 
 #[account]
@@ -506,4 +730,8 @@ pub enum PresaleError {
     TokenEmergencyPaused,
     #[msg("Invalid token program state")]
     InvalidTokenProgramState,
+    #[msg("Treasury address has not been set")]
+    TreasuryNotSet,
+    #[msg("Invalid treasury token account")]
+    InvalidTreasuryAccount,
 }
