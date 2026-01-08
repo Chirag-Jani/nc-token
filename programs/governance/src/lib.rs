@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("H9NZEYkoG3jzfKQMZXYbNYgG47dYmaieEqtYbcA8wvgE");
+declare_id!("5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj");
 
 // Import token program (for later CPI integration)
 #[allow(unused_imports)]

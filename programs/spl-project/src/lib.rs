@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::spl_token::instruction::AuthorityType;
 use anchor_spl::token::{self, Burn, MintTo, SetAuthority, Token, Transfer};
 
-declare_id!("Aa5wVELo2qAmVKQMJfMvtHYBrRvH9gyn2gyv9hqzyRKc");
+declare_id!("HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz");
 
 #[error_code]
 pub enum TokenError {
