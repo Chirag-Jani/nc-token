@@ -198,23 +198,24 @@ yarn deploy
 
 **What this does:**
 - Runs `scripts/deploy.ts`
-- Initializes the token program state
+- Initializes the token program state with max supply cap (100 million tokens)
 - Creates token mint account
 - Creates token metadata
 - Transfers mint authority to state PDA
-- Mints initial token supply to your wallet
+- Mints initial token supply to your wallet (up to 100 million)
 - Saves deployment info to `deployment-info.json`
 
 **Customize token parameters (optional):**
 ```bash
-yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply 100000000000
+yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply 100000000
 ```
 
 **What each parameter does:**
 - `--name`: Token name (e.g., "MyToken")
 - `--symbol`: Token symbol (e.g., "MTK")
 - `--decimals`: Number of decimal places (0-9, typically 9)
-- `--totalSupply`: Total supply in base units (before decimals)
+- `--totalSupply`: Total supply in base units (before decimals). Default is 100 million (100,000,000)
+- **Note**: The max supply cap is automatically set to 100 million tokens during initialization
 
 **Expected output:**
 ```
@@ -223,8 +224,8 @@ yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply 100000000
 🌐 Network: https://api.devnet.solana.com
 📦 Program ID: <program-id>
 📍 State PDA: <state-pda>
-1️⃣ Initializing program state...
-   ✅ State initialized: <tx-signature>
+1️⃣ Initializing program state with max supply cap (100 million)...
+   ✅ State initialized with max supply cap: <tx-signature>
 2️⃣ Creating token mint...
    ✅ Mint created: <mint-address>
 3️⃣ Creating token metadata...
@@ -1130,6 +1131,104 @@ ts-node scripts/revoke-authorities.ts
 ```
 
 ---
+
+
+***COMMANDS LIST****
+```
+# Setup
+solana config set --url devnet
+solana airdrop 2 $(solana address)
+yarn install
+
+# Build
+anchor build
+anchor keys sync
+
+# Deploy Token
+anchor deploy --program-name spl-project --provider.cluster devnet
+yarn deploy
+
+
+# Deploy Governance Program
+anchor deploy --program-name governance --provider.cluster devnet
+yarn deploy:governance
+
+# Link Token Program to Governance
+ts-node scripts/set-token-program.ts
+
+# Deploy Presale Program
+anchor deploy --program-name presale --provider.cluster devnet
+yarn deploy:presale
+
+# Link Presale Program to Governance
+ts-node scripts/set-presale-program.ts
+
+# Optional: Transfer Token Authority to Governance (7-day cooldown)
+ts-node scripts/transfer-authority.ts
+# Note: After 7 days, execute the governance change
+
+# Setup Presale (when ready)
+ts-node scripts/allow-payment-token.ts <PAYMENT_TOKEN_MINT>
+ts-node scripts/start-presale.ts
+
+# Optional: Revoke Authorities (production hardening)
+yarn revoke-authorities
+```
+
+```
+yarn deploy:governance --requiredApprovals 1
+
+# Option 1: Use same wallet twice (for testing only)
+yarn deploy:governance --signers "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu,4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu" --requiredApprovals 2
+
+# Option 2: Add actual different signer addresses
+yarn deploy:governance --signers "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu,DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6" --requiredApprovals 2
+
+# Option 3: Using environment variable
+SIGNERS="4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu,DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6" REQUIRED_APPROVALS=2 yarn deploy:governance
+
+```
+
+```
+# Step 1: Generate new program ID
+cd /mnt/c/Dev/Jani/nc-token
+rm -f target/deploy/presale-keypair.json
+solana-keygen new --outfile target/deploy/presale-keypair.json --force --no-bip39-passphrase
+NEW_PROGRAM_ID=$(solana-keygen pubkey target/deploy/presale-keypair.json)
+echo "New Program ID: $NEW_PROGRAM_ID"
+# Copy this ID - you'll need it!
+
+# Step 2: Update programs/presale/src/lib.rs (line 37)
+# Replace the old declare_id! with: declare_id!("$NEW_PROGRAM_ID");
+
+# Step 3: Update Anchor.toml (line 10)  
+# Replace the old presale ID with: presale = "$NEW_PROGRAM_ID"
+
+# Step 4: Build
+anchor build
+anchor keys sync
+
+# Step 5: Deploy
+anchor deploy --program-name presale --provider.cluster devnet
+
+# Step 6: Reinitialize (uses main mint now)
+yarn deploy:presale
+
+# Step 7: Verify
+ts-node scripts/check-presale-state.ts
+
+# Step 8: Transfer 40M tokens
+ts-node scripts/fund-presale-vault.ts 40000000
+
+# Step 9: Link to governance
+ts-node scripts/set-presale-program.ts
+
+# Step 10: Start presale
+ts-node scripts/start-presale.ts
+
+# Step 11: Test purchase
+ts-node scripts/buy-presale.ts 0.1
+```
 
 ## 📝 Summary Checklist
 

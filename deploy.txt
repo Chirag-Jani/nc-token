@@ -1,0 +1,277 @@
+ashpatel@hp:/mnt/c/Dev/Jani/nc-token$ anchor keys sync
+All program id declarations are synced.
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ anchor deploy --program-name spl-project --provider.cluster devnet
+Deploying cluster: https://api.devnet.solana.com
+Upgrade authority: /home/yashpatel/.config/solana/id.json
+Deploying program "spl_project"...
+Program path: /mnt/c/Dev/Jani/nc-token/target/deploy/spl_project.so...
+Program Id: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+
+Signature: 3MCxh1Xhz2WxwJGACg9Uwbf7CqGxQnnXuQcsofUUnyRhdYjaYGdeueHeWNBPuGMMWfr957RWth5ng56ksxJ3vHTY
+
+Deploy success
+
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ yarn deploy
+yarn run v1.22.22
+$ ts-node scripts/deploy.ts
+🚀 Starting deployment...
+
+📝 Wallet: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+🌐 Network: https://api.devnet.solana.com
+
+📦 Program ID: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+
+📍 State PDA: F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV
+
+1️⃣ Initializing program state...
+   ℹ️  State already initialized, skipping...
+
+2️⃣ Creating token mint...
+   ✅ Mint created: 2SYoftnz3w31ZbTkt5mt7sVys9MBdgeekEKznyvTubz6
+
+3️⃣ Creating token metadata...
+   ✅ Metadata created: 4JbqCd3qWtjkEZVaKfeo67tH29PmzsUC8FotuTA2xXWE
+   📝 Name: NC
+   🏷️  Symbol: NC
+
+4️⃣ Transferring mint authority to state PDA...
+   ✅ Mint authority transferred to state PDA
+
+5️⃣ Creating token account...
+   ✅ Token account created: 9urVeNWvNULdZhRAfdJo2LRU1Dc8tDsENeF4koKDDi7i
+
+6️⃣ Minting total supply (100,000,000 tokens)...
+   ⚠️  Note: u64 limit allows max ~18446744073 tokens per account
+   📦 Will mint up to the limit (18446744073 tokens)...
+   💰 Current balance: 0 tokens
+   📦 Minting 100000000 tokens in 1 chunks of 1,000,000,000 tokens each...
+   💰 Minting chunk 1/1: 100,000,000 tokens...
+   ✅ Chunk 1 minted: MG28pXQAaSErFFCT6rJEwdjnroFKSukvMXNuZmDuBQMkneG4Ut4hXkUKsrv8DDwhuCVsfDKXgPJuAez6wEySBh9
+   ✅ Minting completed!
+   💰 Final balance: 100,000,000 tokens
+
+✅ Deployment complete!
+
+📋 Deployment Summary:
+   Program ID: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+   Mint: 2SYoftnz3w31ZbTkt5mt7sVys9MBdgeekEKznyvTubz6
+   Metadata: 4JbqCd3qWtjkEZVaKfeo67tH29PmzsUC8FotuTA2xXWE
+   State PDA: F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV
+   Token Account: 9urVeNWvNULdZhRAfdJo2LRU1Dc8tDsENeF4koKDDi7i
+   Total Supply: 100,000,000
+   Decimals: 9
+   Name: NC
+   Symbol: NC
+
+💾 Deployment info saved to: deployment-info.json
+✨ Done!
+Done in 63.17s.
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ anchor deploy --program-name governance --provider.cluster devnet
+Deploying cluster: https://api.devnet.solana.com
+Upgrade authority: /home/yashpatel/.config/solana/id.json
+Deploying program "governance"...
+Program path: /mnt/c/Dev/Jani/nc-token/target/deploy/governance.so...
+Program Id: 5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj
+
+Signature: xD33KiKtjJ99uTuVnE4XrAZhNKUuru5FE8ENGLb56GDMeguLQJddXuQRFLUdpYjkhtE3YRcGtAkVtRGXbtzzdK8
+
+Deploy success
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ yarn deploy:governance --signers "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu,DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6" --requiredApprovals 2
+yarn run v1.22.22
+$ ts-node scripts/deploy-governance.ts --signers 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu,DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6 --requiredApprovals 2
+🚀 Starting governance deployment...
+
+📝 Wallet: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+🌐 Network: https://api.devnet.solana.com
+
+📦 Program ID: 5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj
+📍 Governance State PDA: Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy
+   Bump: 252
+
+1️⃣ Initializing governance state...
+
+📋 Configuration:
+   Required Approvals: 2
+   Cooldown Period: 1800 seconds
+   Signers: 2
+      1. 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+      2. DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6
+
+✅ Governance initialized!
+   Transaction: 5Wtwr7e3ikuqhQ3WewjAc163HFS85CnpKq6bAmwcjuYAXitV8Er49rVfCUbT5tNzpzU54c4ugaSYx1SLJaMVPaqF
+
+📋 Governance State:
+   Authority: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Required Approvals: 2
+   Cooldown Period: 1800
+   Next Transaction ID: 1
+   Token Program Set: false
+   Presale Program Set: false
+   Signers: 2
+
+💾 Deployment info saved to: governance-deployment-info.json
+
+✅ Governance deployment complete!
+
+📝 Next steps:
+   1. Set token program: ts-node scripts/set-token-program.ts
+   2. Set presale program: ts-node scripts/set-presale-program.ts
+   3. Transfer token authority to governance (if needed)
+Done in 24.89s.
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ ts-node scripts/set-token-program.ts
+🔗 Setting token program in governance...
+   Token Program ID: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+   Governance State PDA: Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy
+✅ Token program set in governance: 3r9x2YMFV7bt7DEeTpZUwMk9zKDvaPXnqxLymvSHefKj2P1RBbiG6yy7iZqxLgEhpX34w4qPBzFUgh2sWsHFVrNX
+
+📋 Updated Governance State:
+   Token Program: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+   Token Program Set: true
+
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ anchor deploy --program-name presale --provider.cluster devnet
+Deploying cluster: https://api.devnet.solana.com
+Upgrade authority: /home/yashpatel/.config/solana/id.json
+Deploying program "presale"...
+Program path: /mnt/c/Dev/Jani/nc-token/target/deploy/presale.so...
+Program Id: 3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp                                                                                              
+
+Signature: 3kY7GpnZy9NfoAhLUSJYpJVf43yrjhCrfJLkPUsWL8tvGcN5vojSpbRN1kmKAMNtjZwgRS8mV9w7tRKcpAA35mfX
+
+Deploy success
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ yarn deploy:presale
+yarn run v1.22.22
+$ ts-node scripts/deploy-presale.ts
+🚀 Starting presale deployment...
+
+📝 Wallet: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+🌐 Network: https://api.devnet.solana.com
+
+📦 Presale Program ID: 3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp
+📦 Token Program ID: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+
+📍 Presale State PDA: 67svxFnWFDUu4mHZm6a5uuZC9j32TXZ4DrJa943sG5P4
+📍 Token State PDA: F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV
+
+1️⃣ Checking token program state...
+   ✅ Token program state found
+   Authority: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Emergency Paused: false
+
+2️⃣ Creating presale token mint...
+   ✅ Presale token mint created: 7w4qbcAihrQGGfLbyeVpCEY5C8EFQYwZ5m7oZ47g3WoZ
+
+3️⃣ Initializing presale program...
+   ✅ Presale initialized: 3tnik9uru3oX9J6tBmqkJRnGWp1qXewyEGR1C1dTJyVQQNdLPXDzyi5cmEAKKv7cfq6YoDigHKA9GCXpcgbYTHKs
+   Admin: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Presale Token Mint: 7w4qbcAihrQGGfLbyeVpCEY5C8EFQYwZ5m7oZ47g3WoZ
+   Token Program: HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz
+   Status: notStarted
+
+4️⃣ Creating presale token vault...
+   ✅ Presale token vault created
+5️⃣ Funding presale token vault...
+   ✅ Funded vault with 1000000000 tokens
+
+6️⃣ Saving deployment info...
+   ✅ Deployment info saved to presale-deployment-info.json
+
+✅ Presale deployment complete!
+
+📋 Deployment Summary:
+   Presale Program: 3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp
+   Presale State PDA: 67svxFnWFDUu4mHZm6a5uuZC9j32TXZ4DrJa943sG5P4
+   Presale Token Mint: 7w4qbcAihrQGGfLbyeVpCEY5C8EFQYwZ5m7oZ47g3WoZ
+   Presale Token Vault: 7M69QPoURp6uFE91pJYxifxZNRUbktdt9qidtod456vr
+   Admin: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Total Supply: 1000000000
+   Decimals: 9
+
+📝 Next Steps:
+   1. Allow payment tokens: call allow_payment_token()
+   2. Start presale: call start_presale()
+   3. Users can now buy tokens: call buy()
+
+✅ Script completed successfully
+Done in 45.83s.
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ ts-node scripts/set-presale-program.ts
+🔗 Setting presale program in governance...
+   Presale Program ID: 3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp
+   Governance State PDA: Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy
+✅ Presale program set in governance: 5VmQz6x4KJXxfMUMAC2K9QXBaKq61T6MMdSo8NGURmTVrfjUygUV3Xw4fByVnU29A2YHrtRQdJRudUcwzCPNUqWq
+
+📋 Updated Governance State:
+   Presale Program: 3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp
+   Presale Program Set: true
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ ts-node scripts/transfer-authority.ts
+🚀 Proposing governance change...
+   Current Authority: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   New Authority (Governance): Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy
+   Token State PDA: F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV
+✅ Governance change proposed: 41FyZHaa9tDcrNjqTo8q7aUyCyYQ34NPrWp48FJx5MMiDkgQ41CnPraYxFDxPGAN4gFBEVjxbvsxygxe4GUugazA
+
+⏳ Wait 7 days cooldown period...
+💡 After cooldown, call set_governance() to complete transfer
+
+   You can check the pending governance with:
+   anchor run get-state
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ ts-node scripts/start-presale.ts
+🚀 Starting presale...
+   Presale State PDA: 67svxFnWFDUu4mHZm6a5uuZC9j32TXZ4DrJa943sG5P4
+   Admin: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+✅ Presale started: 1ZxomcanxPdZnW7jF1dx2RjNi7reJyVRfLF5Lms7ddEkVJrk1PLw2AhTcgGRzzoFP9txKEtP2BubB17LkQTuu2d
+
+📋 Presale State:
+   Status: { active: {} }
+   Total Tokens Sold: 0
+   Total Raised: 0
+
+
+
+
+
+
+
+
+yashpatel@hp:/mnt/c/Dev/Jani/nc-token$ ts-node scripts/test-presale.ts
+🔍 Checking Presale Status...
+
+============================================================
+📋 Presale State:
+   Status: Active
+   Admin: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Authority: 4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu
+   Presale Token Mint: 7w4qbcAihrQGGfLbyeVpCEY5C8EFQYwZ5m7oZ47g3WoZ
+   Total Tokens Sold: 0
+   Total Raised: 0 lamports
+   Max Presale Cap: 0 (0 = unlimited)
+   Max Per User: 0 (0 = unlimited)
+
+💰 Presale Vault Balance:
+   Vault Address: 2eQLPGm76FDMoE1zMj9oP6btZkdQmWpf8YiexTnZ8PKL
+   Balance: 40000000 tokens
+   Decimals: 9
+
+✅ Presale Status Check:
+   ✅ Presale is ACTIVE - ready to accept purchases
+
+============================================================
+📝 To test a purchase:
+   ts-node scripts/buy-presale.ts <SOL_AMOUNT>
+============================================================
+
+New Program ID: 4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN

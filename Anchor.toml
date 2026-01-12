@@ -7,7 +7,7 @@ skip-lint = false
 
 [programs.localnet]
 governance = "5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj"
-presale = "3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp"
+presale = "4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN"
 spl_project = "HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz"
 
 [registry]

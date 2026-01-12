@@ -51,8 +51,8 @@ const TOKEN_DECIMALS = parseInt(
   cliArgs.decimals || process.env.TOKEN_DECIMALS || "9"
 );
 const TOTAL_SUPPLY = BigInt(
-  cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "100000000000"
-);
+  cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "100000000"
+); // 100 million tokens
 
 // Validate decimals
 if (TOKEN_DECIMALS < 0 || TOKEN_DECIMALS > 9) {
@@ -80,7 +80,7 @@ async function main() {
       process.env.HOME || process.env.USERPROFILE || "",
       ".config",
       "solana",
-      "test-keypair.json"
+      "id.json"
     );
   const walletPath = defaultWallet.replace(
     "~",
@@ -386,6 +386,8 @@ async function main() {
           .accountsPartial({
             mint: mintKeypair.publicKey,
             to: tokenAccount,
+            governance: walletKeypair.publicKey,
+            recipientBlacklist: SystemProgram.programId, // Optional placeholder
             tokenProgram: TOKEN_PROGRAM_ID,
           })
           .rpc();
@@ -408,6 +410,8 @@ async function main() {
           .accountsPartial({
             mint: mintKeypair.publicKey,
             to: tokenAccount,
+            governance: walletKeypair.publicKey,
+            recipientBlacklist: SystemProgram.programId, // Optional placeholder
             tokenProgram: TOKEN_PROGRAM_ID,
           })
           .rpc();

@@ -1,0 +1,13 @@
+{
+  "programId": "5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj",
+  "governanceStatePda": "Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy",
+  "authority": "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu",
+  "requiredApprovals": 2,
+  "cooldownPeriod": 1800,
+  "signers": [
+    "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu",
+    "DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6"
+  ],
+  "network": "https://api.devnet.solana.com",
+  "deployedAt": "2026-01-12T20:32:08.228Z"
+}

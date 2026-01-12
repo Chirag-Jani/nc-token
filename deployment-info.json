@@ -1,13 +1,13 @@
 {
-  "programId": "3vBTeKk5TZ3y8HMEwD3S3J6Mh4zfvuwt8PE1jSjsNqCe",
-  "mint": "CPU9nktk1otUYDgkqpS9uMg8mHkNN7J7snQD3CYiCTQb",
-  "metadata": "4FuNJDBhQPqK4TfG3NmFiWxyX5bWfH21CuTHjZxfAJtF",
-  "statePda": "6d1fWrqVcgtrGausPePxUL4GENy1NjXJ4fQMGDsYKaPS",
-  "tokenAccount": "iJ1hmv9KCksgv4dgaZgFRhLadW6pLtcbEjPUNo9PSoo",
-  "totalSupply": 100000000000,
-  "decimals": 6,
-  "name": "NC Token",
-  "symbol": "NCT",
+  "programId": "HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz",
+  "mint": "2SYoftnz3w31ZbTkt5mt7sVys9MBdgeekEKznyvTubz6",
+  "metadata": "4JbqCd3qWtjkEZVaKfeo67tH29PmzsUC8FotuTA2xXWE",
+  "statePda": "F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV",
+  "tokenAccount": "9urVeNWvNULdZhRAfdJo2LRU1Dc8tDsENeF4koKDDi7i",
+  "totalSupply": 100000000,
+  "decimals": 9,
+  "name": "NC",
+  "symbol": "NC",
   "network": "https://api.devnet.solana.com",
-  "deployedAt": "2025-12-26T10:23:31.748Z"
+  "deployedAt": "2026-01-12T20:11:17.860Z"
 }

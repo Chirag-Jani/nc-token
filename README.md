@@ -49,12 +49,14 @@ anchor test
 ## Deployment
 
 ```bash
-# Default (NC token, 100B supply)
+# Default (NC token, 100M supply cap)
 yarn deploy
 
 # Custom
-yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply "1000000000"
+yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply "100000000"
 ```
+
+**Note:** The max supply cap is automatically set to 100 million tokens during initialization. This prevents infinite minting and enforces a hard cap on token supply.
 
 ## Configuration
 

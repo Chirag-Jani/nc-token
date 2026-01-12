@@ -5,6 +5,8 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "deploy": "ts-node scripts/deploy.ts",
     "deploy:presale": "ts-node scripts/deploy-presale.ts",
+    "deploy:governance": "ts-node scripts/deploy-governance.ts",
+    "deploy:all": "ts-node scripts/deploy-all.ts",
     "test:presale": "anchor test --skip-local-validator tests/presale.ts"
   },
   "dependencies": {

@@ -2,12 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import {
   TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountInstruction,
-  createInitializeMintInstruction,
-  createMintToInstruction,
   getAssociatedTokenAddress,
-  getMinimumBalanceForRentExemptMint,
-  MINT_SIZE,
 } from "@solana/spl-token";
 import {
   Connection,
@@ -62,7 +57,7 @@ async function main() {
       process.env.HOME || process.env.USERPROFILE || "",
       ".config",
       "solana",
-      "test-keypair.json"
+      "id.json"
     );
   const walletPath = defaultWallet.replace(
     "~",
@@ -71,7 +66,7 @@ async function main() {
 
   if (!fs.existsSync(walletPath)) {
     throw new Error(
-      `Wallet not found at ${walletPath}. Please set ANCHOR_WALLET environment variable or ensure test-keypair.json exists.`
+      `Wallet not found at ${walletPath}. Please set ANCHOR_WALLET environment variable or ensure id.json exists.`
     );
   }
 
@@ -130,34 +125,27 @@ async function main() {
   }
   console.log("");
 
-  // Step 2: Create presale token mint
-  console.log("2️⃣ Creating presale token mint...");
-  const presaleTokenMint = Keypair.generate();
-  const mintRent = await getMinimumBalanceForRentExemptMint(connection);
+  // Step 2: Use existing token mint (from main token deployment)
+  console.log("2️⃣ Using existing token mint from main deployment...");
+  
+  // Load main token deployment info to get the mint
+  let mainDeploymentInfo: any;
+  try {
+    mainDeploymentInfo = JSON.parse(
+      fs.readFileSync("deployment-info.json", "utf-8")
+    );
+  } catch (error) {
+    throw new Error("❌ deployment-info.json not found. Deploy token program first with 'yarn deploy'");
+  }
 
-  const createMintTx = new Transaction().add(
-    SystemProgram.createAccount({
-      fromPubkey: walletKeypair.publicKey,
-      newAccountPubkey: presaleTokenMint.publicKey,
-      space: MINT_SIZE,
-      lamports: mintRent,
-      programId: TOKEN_PROGRAM_ID,
-    }),
-    createInitializeMintInstruction(
-      presaleTokenMint.publicKey,
-      PRESALE_TOKEN_DECIMALS,
-      walletKeypair.publicKey, // Mint authority (can be transferred later)
-      null // No freeze authority
-    )
-  );
-
-  await sendAndConfirmTransaction(
-    connection,
-    createMintTx,
-    [walletKeypair, presaleTokenMint],
-    { commitment: "confirmed" }
-  );
-  console.log("   ✅ Presale token mint created:", presaleTokenMint.publicKey.toString());
+  const mainMintStr = mainDeploymentInfo.mint || mainDeploymentInfo.mintAddress;
+  if (!mainMintStr) {
+    throw new Error("❌ mint or mintAddress not found in deployment-info.json");
+  }
+  const presaleTokenMint = new PublicKey(mainMintStr);
+  
+  console.log("   ✅ Using main token mint:", presaleTokenMint.toString());
+  console.log("   💡 This ensures presale uses the same mint as your 100M token supply");
   console.log("");
 
   // Step 3: Initialize presale program
@@ -166,11 +154,11 @@ async function main() {
     const initTx = await presaleProgram.methods
       .initialize(
         walletKeypair.publicKey, // admin
-        presaleTokenMint.publicKey, // presale_token_mint
+        presaleTokenMint, // presale_token_mint (using main token mint)
         tokenProgram.programId, // token_program
         tokenStatePda // token_program_state
       )
-      .accounts({
+      .accountsPartial({
         presaleState: presaleStatePda,
         payer: walletKeypair.publicKey,
         systemProgram: SystemProgram.programId,
@@ -200,66 +188,39 @@ async function main() {
   const [presaleTokenVaultPda] = PublicKey.findProgramAddressSync(
     [
       Buffer.from("presale_token_vault_pda"),
-      presaleTokenMint.publicKey.toBuffer(),
+      presaleTokenMint.toBuffer(),
     ],
     presaleProgram.programId
   );
 
   const presaleTokenVault = await getAssociatedTokenAddress(
-    presaleTokenMint.publicKey,
+    presaleTokenMint,
     presaleTokenVaultPda,
     true
   );
 
   // Create the ATA if it doesn't exist
+  // For PDAs, we need to use createIdempotent or create it manually
+  // The vault will be created automatically when tokens are transferred to it
+  // But we can check if it exists first
   try {
-    const createVaultTx = new Transaction().add(
-      createAssociatedTokenAccountInstruction(
-        walletKeypair.publicKey,
-        presaleTokenVault,
-        presaleTokenVaultPda,
-        presaleTokenMint.publicKey
-      )
-    );
-
-    await sendAndConfirmTransaction(
-      connection,
-      createVaultTx,
-      [walletKeypair],
-      { commitment: "confirmed" }
-    );
-    console.log("   ✅ Presale token vault created");
-  } catch (err: any) {
-    if (err.message?.includes("already exists")) {
+    const vaultInfo = await connection.getAccountInfo(presaleTokenVault);
+    if (vaultInfo) {
       console.log("   ℹ️  Presale token vault already exists");
     } else {
-      throw err;
+      console.log("   ℹ️  Presale token vault will be created automatically when funded");
+      console.log("   💡 Use 'ts-node scripts/fund-presale-vault.ts' to transfer tokens");
     }
-  }
-
-  // Mint presale tokens to vault
-  console.log("5️⃣ Funding presale token vault...");
-  try {
-    const mintTx = new Transaction().add(
-      createMintToInstruction(
-        presaleTokenMint.publicKey,
-        presaleTokenVault,
-        walletKeypair.publicKey,
-        Number(PRESALE_TOKEN_SUPPLY)
-      )
-    );
-
-    await sendAndConfirmTransaction(connection, mintTx, [walletKeypair], {
-      commitment: "confirmed",
-    });
-    console.log(
-      "   ✅ Funded vault with",
-      PRESALE_TOKEN_SUPPLY.toString(),
-      "tokens"
-    );
   } catch (err: any) {
-    console.log("   ⚠️  Could not fund vault (may need to mint manually):", err.message);
+    console.log("   ℹ️  Presale token vault will be created automatically when funded");
+    console.log("   💡 Use 'ts-node scripts/fund-presale-vault.ts' to transfer tokens");
   }
+
+  // Note: Tokens should be transferred to vault using fund-presale-vault.ts
+  // We don't mint here because we're using the existing main token mint
+  console.log("5️⃣ Presale vault ready for funding...");
+  console.log("   💡 Use 'ts-node scripts/fund-presale-vault.ts <amount>' to transfer tokens");
+  console.log("   💡 Example: ts-node scripts/fund-presale-vault.ts 40000000");
   console.log("");
 
   // Step 6: Save deployment info
@@ -269,7 +230,7 @@ async function main() {
     tokenProgramId: tokenProgram.programId.toString(),
     presaleStatePda: presaleStatePda.toString(),
     tokenStatePda: tokenStatePda.toString(),
-    presaleTokenMint: presaleTokenMint.publicKey.toString(),
+    presaleTokenMint: presaleTokenMint.toString(),
     presaleTokenVault: presaleTokenVault.toString(),
     presaleTokenVaultPda: presaleTokenVaultPda.toString(),
     admin: walletKeypair.publicKey.toString(),
@@ -291,7 +252,7 @@ async function main() {
   console.log("📋 Deployment Summary:");
   console.log("   Presale Program:", presaleProgram.programId.toString());
   console.log("   Presale State PDA:", presaleStatePda.toString());
-  console.log("   Presale Token Mint:", presaleTokenMint.publicKey.toString());
+  console.log("   Presale Token Mint:", presaleTokenMint.toString());
   console.log("   Presale Token Vault:", presaleTokenVault.toString());
   console.log("   Admin:", walletKeypair.publicKey.toString());
   console.log("   Total Supply:", PRESALE_TOKEN_SUPPLY.toString());

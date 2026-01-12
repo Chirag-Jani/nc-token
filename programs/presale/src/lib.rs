@@ -1,3 +1,29 @@
+//! # Presale Program
+//!
+//! A secure presale contract for token distribution with:
+//! - Multi-token payment support (USDC, USDT, etc.)
+//! - Native SOL payment support
+//! - Presale caps (total and per-user limits)
+//! - Blacklist enforcement
+//! - Emergency pause integration
+//! - Treasury management
+//! - Comprehensive access controls
+//!
+//! ## Security Features
+//! - Admin and governance authority separation
+//! - Blacklist checks before purchases
+//! - Presale cap enforcement
+//! - Per-user purchase limits
+//! - Emergency pause from token program
+//! - Treasury address validation
+//!
+//! ## Presale Flow
+//! 1. Initialize: Set up presale with admin and token program
+//! 2. Allow Payment Tokens: Whitelist payment tokens (USDC, USDT) - SOL is always available
+//! 3. Start Presale: Activate presale for purchases
+//! 4. Buy: Users purchase tokens with allowed payment tokens or native SOL
+//! 5. Withdraw: Admin withdraws funds to treasury
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
@@ -8,13 +34,55 @@ use spl_project::program::SplProject;
 // #[allow(unused_imports)]
 // use governance::program::Governance;
 
-declare_id!("3gRbrfhqsNnXG7QpbEDPuQBbRr59D733DfhCXVxSWanp");
+declare_id!("4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN");
+
+// Constants for token account layout offsets
+pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
+pub const TOKEN_ACCOUNT_OWNER_OFFSET: usize = 32;
+pub const TOKEN_STATE_EMERGENCY_PAUSED_OFFSET: usize = 41; // discriminator(8) + authority(32) + bump(1) = 41
+
+#[event]
+pub struct TreasuryWithdrawn {
+    pub amount: u64,
+    pub treasury: Pubkey,
+}
+
+#[event]
+pub struct PresaleStarted {
+    pub previous_status: u8,
+}
+
+#[event]
+pub struct PresaleStopped {}
+
+#[event]
+pub struct PresalePaused {}
 
 #[program]
 pub mod presale {
     use super::*;
 
-    // Initialize the presale contract
+    /// Initializes the presale contract
+    ///
+    /// Sets up the presale state with admin, token program, and initial configuration.
+    /// This is a one-time operation that establishes the presale structure.
+    ///
+    /// # Parameters
+    /// - `ctx`: Initialize context
+    /// - `admin`: Admin address (must not be default)
+    /// - `presale_token_mint`: The token mint being sold
+    /// - `token_program`: Token program ID (must not be default)
+    /// - `token_program_state`: Token program state PDA (must not be default)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if initialization completes
+    ///
+    /// # Errors
+    /// - `PresaleError::InvalidAccount` if any address is default
+    ///
+    /// # Security
+    /// - Validates all addresses are not default
+    /// - Sets initial state to NotStarted
     pub fn initialize(
         ctx: Context<Initialize>,
         admin: Pubkey,
@@ -22,6 +90,27 @@ pub mod presale {
         token_program: Pubkey,
         token_program_state: Pubkey,
     ) -> Result<()> {
+        // Validate admin is not default
+        require!(
+            admin != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        // Validate presale token mint is not default
+        require!(
+            presale_token_mint != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        // Validate token program is not default
+        require!(
+            token_program != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        // Validate token program state is not default
+        require!(
+            token_program_state != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+
         let presale_state = &mut ctx.accounts.presale_state;
         presale_state.admin = admin;
         presale_state.authority = admin; // Initially admin, can be transferred to governance
@@ -34,6 +123,8 @@ pub mod presale {
         presale_state.total_raised = 0;
         presale_state.governance_set = false;
         presale_state.treasury_address = Pubkey::default(); // Can be set later via set_treasury_address
+        presale_state.max_presale_cap = 0; // 0 = unlimited
+        presale_state.max_per_user = 0; // 0 = unlimited
         presale_state.bump = ctx.bumps.presale_state;
         
         msg!("Presale initialized with admin: {}, token_program: {}", admin, token_program);
@@ -47,6 +138,16 @@ pub mod presale {
         require!(
             presale_state.authority == ctx.accounts.authority.key(),
             PresaleError::Unauthorized
+        );
+        // Validate new_authority is not default
+        require!(
+            new_authority != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        // Validate governance hasn't been set already (one-time operation)
+        require!(
+            !presale_state.governance_set,
+            PresaleError::InvalidStatus
         );
         let old_authority = presale_state.authority;
         presale_state.authority = new_authority;
@@ -72,15 +173,48 @@ pub mod presale {
                 || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
             PresaleError::Unauthorized
         );
+        // Validate token program is not default
+        require!(
+            token_program != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        // Validate token program state is not default
+        require!(
+            token_program_state != Pubkey::default(),
+            PresaleError::InvalidAccount
+        );
+        let old_token_program = presale_state.token_program;
         presale_state.token_program = token_program;
         presale_state.token_program_state = token_program_state;
-        msg!("Token program set to: {}", token_program);
+        msg!("Token program updated from {:?} to {:?}", old_token_program, token_program);
         Ok(())
     }
 
-    // Admin function to start the presale
+    /// Starts the presale, allowing purchases
+    ///
+    /// Changes presale status from NotStarted or Paused to Active.
+    /// Only admin can call this function.
+    ///
+    /// # Parameters
+    /// - `ctx`: AdminOnly context (requires admin authority)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if presale is started
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin
+    /// - `PresaleError::InvalidStatus` if presale is not in NotStarted or Paused state
+    ///
+    /// # Events
+    /// - Emits `PresaleStarted` with previous status
     pub fn start_presale(ctx: Context<AdminOnly>) -> Result<()> {
         let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (AdminOnly has 'admin' field, not 'authority')
+        require!(
+            presale_state.authority == ctx.accounts.admin.key(),
+            PresaleError::Unauthorized
+        );
         
         require!(
             presale_state.status == PresaleStatus::NotStarted 
@@ -88,14 +222,43 @@ pub mod presale {
             PresaleError::InvalidStatus
         );
         
+        let old_status = presale_state.status;
         presale_state.status = PresaleStatus::Active;
+        
+        // Emit event
+        emit!(PresaleStarted {
+            previous_status: old_status as u8,
+        });
+        
         msg!("Presale started");
         Ok(())
     }
 
-    // Admin function to stop the presale
+    /// Stops the presale, preventing new purchases
+    ///
+    /// Changes presale status from Active to Stopped.
+    /// Only admin can call this function.
+    ///
+    /// # Parameters
+    /// - `ctx`: AdminOnly context (requires admin authority)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if presale is stopped
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin
+    /// - `PresaleError::InvalidStatus` if presale is not Active
+    ///
+    /// # Events
+    /// - Emits `PresaleStopped`
     pub fn stop_presale(ctx: Context<AdminOnly>) -> Result<()> {
         let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (AdminOnly has 'admin' field, not 'authority')
+        require!(
+            presale_state.authority == ctx.accounts.admin.key(),
+            PresaleError::Unauthorized
+        );
         
         require!(
             presale_state.status == PresaleStatus::Active,
@@ -103,13 +266,40 @@ pub mod presale {
         );
         
         presale_state.status = PresaleStatus::Stopped;
+        
+        // Emit event
+        emit!(PresaleStopped {});
+        
         msg!("Presale stopped");
         Ok(())
     }
 
-    // Admin function to pause the presale
+    /// Pauses the presale temporarily
+    ///
+    /// Changes presale status from Active to Paused, preventing new purchases
+    /// but allowing resumption via start_presale.
+    /// Only admin can call this function.
+    ///
+    /// # Parameters
+    /// - `ctx`: AdminOnly context (requires admin authority)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if presale is paused
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin
+    /// - `PresaleError::InvalidStatus` if presale is not Active
+    ///
+    /// # Events
+    /// - Emits `PresalePaused`
     pub fn pause_presale(ctx: Context<AdminOnly>) -> Result<()> {
         let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (AdminOnly has 'admin' field, not 'authority')
+        require!(
+            presale_state.authority == ctx.accounts.admin.key(),
+            PresaleError::Unauthorized
+        );
         
         require!(
             presale_state.status == PresaleStatus::Active,
@@ -146,7 +336,33 @@ pub mod presale {
         Ok(())
     }
 
-    // Buy function - users can buy presale tokens with allowed payment tokens
+    /// Allows users to buy presale tokens with allowed payment tokens
+    ///
+    /// Transfers payment tokens from buyer to presale vault and transfers presale
+    /// tokens from presale vault to buyer. Enforces all security checks including
+    /// blacklist, presale caps, and emergency pause.
+    ///
+    /// # Parameters
+    /// - `ctx`: Buy context with all required accounts
+    /// - `amount`: Amount of payment tokens to spend (in payment token's base units)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if purchase completes
+    ///
+    /// # Errors
+    /// - `PresaleError::PresaleNotActive` if presale is not active
+    /// - `PresaleError::TokenEmergencyPaused` if token program is paused
+    /// - `PresaleError::BuyerBlacklisted` if buyer is blacklisted
+    /// - `PresaleError::PaymentTokenNotAllowed` if payment token not whitelisted
+    /// - `PresaleError::PresaleCapExceeded` if purchase exceeds total cap
+    /// - `PresaleError::PerUserLimitExceeded` if purchase exceeds per-user limit
+    ///
+    /// # Security
+    /// - Blacklist check before purchase
+    /// - Emergency pause check
+    /// - Presale cap enforcement
+    /// - Per-user limit enforcement
+    /// - Manual token account validation for safety
     pub fn buy(
         ctx: Context<Buy>,
         amount: u64, // Amount of payment tokens to spend
@@ -161,11 +377,9 @@ pub mod presale {
 
         // Check token program emergency pause
         // Deserialize token state manually to check emergency_paused
-        // TokenState layout: discriminator(8) + authority(32) + bump(1) + emergency_paused(1) + ...
-        // emergency_paused is at offset 8 + 32 + 1 = 41
         let token_state_data = ctx.accounts.token_state.try_borrow_data()?;
-        if token_state_data.len() >= 42 {
-            let emergency_paused = token_state_data[41] != 0;
+        if token_state_data.len() > TOKEN_STATE_EMERGENCY_PAUSED_OFFSET {
+            let emergency_paused = token_state_data[TOKEN_STATE_EMERGENCY_PAUSED_OFFSET] != 0;
             require!(
                 !emergency_paused,
                 PresaleError::TokenEmergencyPaused
@@ -173,9 +387,15 @@ pub mod presale {
         }
 
         // Check if buyer is blacklisted
-        // Note: In a full implementation, you'd check the blacklist PDA
-        // For now, we'll skip this check but the account structure supports it
-
+        if ctx.accounts.buyer_blacklist.key() != Pubkey::default() {
+            let blacklist_data = ctx.accounts.buyer_blacklist.try_borrow_data()?;
+            if blacklist_data.len() >= 41 {
+                // Account discriminator (8) + account Pubkey (32) + is_blacklisted bool (1) = offset 40
+                let is_blacklisted = blacklist_data[40] != 0;
+                require!(!is_blacklisted, PresaleError::BuyerBlacklisted);
+            }
+        }
+        
         // Check if payment token is allowed
         let allowed_token = &ctx.accounts.allowed_token;
         require!(
@@ -183,29 +403,20 @@ pub mod presale {
             PresaleError::PaymentTokenNotAllowed
         );
 
-        // Validate token account mints match
-        // Read mint directly from account data (SPL token account layout: mint at offset 0)
-        let buyer_payment_token_data = ctx.accounts.buyer_payment_token_account.try_borrow_data()?;
-        let buyer_token_data = ctx.accounts.buyer_token_account.try_borrow_data()?;
-        
-        require!(
-            buyer_payment_token_data.len() >= 32,
-            PresaleError::PaymentTokenNotAllowed
-        );
-        require!(
-            buyer_token_data.len() >= 32,
-            PresaleError::PaymentTokenNotAllowed
-        );
-        
-        let buyer_payment_mint = Pubkey::try_from_slice(&buyer_payment_token_data[0..32])
+        // Validate token account mints match (manual validation)
+        let buyer_payment_data = ctx.accounts.buyer_payment_token_account.try_borrow_data()?;
+        require!(buyer_payment_data.len() >= 32, PresaleError::PaymentTokenNotAllowed);
+        let buyer_payment_mint = Pubkey::try_from_slice(&buyer_payment_data[0..32])
             .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
-        let buyer_token_mint = Pubkey::try_from_slice(&buyer_token_data[0..32])
-            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
-        
         require!(
             buyer_payment_mint == ctx.accounts.payment_token_mint.key(),
             PresaleError::PaymentTokenNotAllowed
         );
+        
+        let buyer_token_data = ctx.accounts.buyer_token_account.try_borrow_data()?;
+        require!(buyer_token_data.len() >= 32, PresaleError::PaymentTokenNotAllowed);
+        let buyer_token_mint = Pubkey::try_from_slice(&buyer_token_data[0..32])
+            .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
         require!(
             buyer_token_mint == presale_state.presale_token_mint,
             PresaleError::PaymentTokenNotAllowed
@@ -214,12 +425,33 @@ pub mod presale {
         // Calculate tokens to receive (1:1 ratio - you can modify this)
         let tokens_to_receive = amount; // Adjust based on your pricing logic
 
-        // Validate payment vault mint and authority
+        // Check presale cap
+        if presale_state.max_presale_cap > 0 {
+            let new_total = presale_state
+                .total_tokens_sold
+                .checked_add(tokens_to_receive)
+                .ok_or(PresaleError::Overflow)?;
+            require!(
+                new_total <= presale_state.max_presale_cap,
+                PresaleError::PresaleCapExceeded
+            );
+        }
+
+        // Check per-user limit
+        if presale_state.max_per_user > 0 {
+            let user_purchase = &mut ctx.accounts.user_purchase;
+            let new_user_total = user_purchase.total_purchased
+                .checked_add(tokens_to_receive)
+                .ok_or(PresaleError::Overflow)?;
+            require!(
+                new_user_total <= presale_state.max_per_user,
+                PresaleError::PerUserLimitExceeded
+            );
+        }
+
+        // Validate payment vault (manual validation)
         let payment_vault_data = ctx.accounts.presale_payment_vault.try_borrow_data()?;
-        require!(
-            payment_vault_data.len() >= 64,
-            PresaleError::PaymentTokenNotAllowed
-        );
+        require!(payment_vault_data.len() >= 64, PresaleError::PaymentTokenNotAllowed);
         let payment_vault_mint = Pubkey::try_from_slice(&payment_vault_data[0..32])
             .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
         let payment_vault_owner = Pubkey::try_from_slice(&payment_vault_data[32..64])
@@ -243,22 +475,19 @@ pub mod presale {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, amount)?;
 
-        // Validate presale token vault mint and authority
+        // Validate presale token vault (manual validation)
         let presale_token_vault_data = ctx.accounts.presale_token_vault.try_borrow_data()?;
-        require!(
-            presale_token_vault_data.len() >= 64,
-            PresaleError::PaymentTokenNotAllowed
-        );
-        let vault_mint = Pubkey::try_from_slice(&presale_token_vault_data[0..32])
+        require!(presale_token_vault_data.len() >= 64, PresaleError::PaymentTokenNotAllowed);
+        let presale_token_vault_mint = Pubkey::try_from_slice(&presale_token_vault_data[0..32])
             .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
-        let vault_owner = Pubkey::try_from_slice(&presale_token_vault_data[32..64])
+        let presale_token_vault_owner = Pubkey::try_from_slice(&presale_token_vault_data[32..64])
             .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
         require!(
-            vault_mint == presale_state.presale_token_mint,
+            presale_token_vault_mint == presale_state.presale_token_mint,
             PresaleError::PaymentTokenNotAllowed
         );
         require!(
-            vault_owner == ctx.accounts.presale_token_vault_pda.key(),
+            presale_token_vault_owner == ctx.accounts.presale_token_vault_pda.key(),
             PresaleError::PaymentTokenNotAllowed
         );
 
@@ -290,10 +519,201 @@ pub mod presale {
             .checked_add(amount)
             .ok_or(PresaleError::Overflow)?;
 
+        // Update user purchase tracker
+        let user_purchase = &mut ctx.accounts.user_purchase;
+        if user_purchase.buyer == Pubkey::default() {
+            user_purchase.buyer = ctx.accounts.buyer.key();
+            user_purchase.total_purchased = 0;
+        }
+        user_purchase.total_purchased = user_purchase
+            .total_purchased
+            .checked_add(tokens_to_receive)
+            .ok_or(PresaleError::Overflow)?;
+
         msg!(
             "Buy successful: {} tokens for {} payment tokens",
             tokens_to_receive,
             amount
+        );
+
+        Ok(())
+    }
+
+    /// Allows users to buy presale tokens with native SOL
+    ///
+    /// Transfers SOL from buyer to presale SOL vault and transfers presale
+    /// tokens from presale vault to buyer. Enforces all security checks including
+    /// blacklist, presale caps, and emergency pause.
+    ///
+    /// # Parameters
+    /// - `ctx`: BuyWithSol context with all required accounts
+    /// - `sol_amount`: Amount of SOL to spend (in lamports)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if purchase completes
+    ///
+    /// # Errors
+    /// - `PresaleError::PresaleNotActive` if presale is not active
+    /// - `PresaleError::TokenEmergencyPaused` if token program is paused
+    /// - `PresaleError::BuyerBlacklisted` if buyer is blacklisted
+    /// - `PresaleError::PresaleCapExceeded` if purchase exceeds total cap
+    /// - `PresaleError::PerUserLimitExceeded` if purchase exceeds per-user limit
+    /// - `PresaleError::InvalidAmount` if amount is 0 or exceeds buyer balance
+    pub fn buy_with_sol(
+        ctx: Context<BuyWithSol>,
+        sol_amount: u64, // Amount of SOL to spend (in lamports)
+    ) -> Result<()> {
+        let presale_state = &ctx.accounts.presale_state;
+        
+        // Check if presale is active
+        require!(
+            presale_state.status == PresaleStatus::Active,
+            PresaleError::PresaleNotActive
+        );
+
+        // Validate amount
+        require!(
+            sol_amount > 0,
+            PresaleError::InvalidAmount
+        );
+
+        // Check buyer has enough SOL
+        require!(
+            ctx.accounts.buyer.lamports() >= sol_amount,
+            PresaleError::InvalidAmount
+        );
+
+        // Check token program emergency pause - scope the borrow
+        let emergency_paused = {
+            let token_state_data = ctx.accounts.token_state.try_borrow_data()?;
+            if token_state_data.len() > TOKEN_STATE_EMERGENCY_PAUSED_OFFSET {
+                token_state_data[TOKEN_STATE_EMERGENCY_PAUSED_OFFSET] != 0
+            } else {
+                false
+            }
+        }; // Borrow dropped here
+        require!(
+            !emergency_paused,
+            PresaleError::TokenEmergencyPaused
+        );
+
+        // Check if buyer is blacklisted - scope the borrow
+        if ctx.accounts.buyer_blacklist.key() != Pubkey::default() {
+            let is_blacklisted = {
+                let blacklist_data = ctx.accounts.buyer_blacklist.try_borrow_data()?;
+                if blacklist_data.len() >= 41 {
+                    blacklist_data[40] != 0
+                } else {
+                    false
+                }
+            }; // Borrow dropped here
+            require!(!is_blacklisted, PresaleError::BuyerBlacklisted);
+        }
+
+        // Calculate tokens to receive (1:1 ratio - you can modify this)
+        let tokens_to_receive = sol_amount; // Adjust based on your pricing logic
+
+        // Check presale cap
+        if presale_state.max_presale_cap > 0 {
+            let new_total = presale_state
+                .total_tokens_sold
+                .checked_add(tokens_to_receive)
+                .ok_or(PresaleError::Overflow)?;
+            require!(
+                new_total <= presale_state.max_presale_cap,
+                PresaleError::PresaleCapExceeded
+            );
+        }
+
+        // Check per-user limit
+        if presale_state.max_per_user > 0 {
+            let user_purchase = &mut ctx.accounts.user_purchase;
+            let new_user_total = user_purchase.total_purchased
+                .checked_add(tokens_to_receive)
+                .ok_or(PresaleError::Overflow)?;
+            require!(
+                new_user_total <= presale_state.max_per_user,
+                PresaleError::PerUserLimitExceeded
+            );
+        }
+
+        // Extract values we need before borrowing
+        let presale_token_mint = presale_state.presale_token_mint;
+        let presale_token_vault_pda_bump = ctx.bumps.presale_token_vault_pda;
+        let presale_token_vault_pda_key = ctx.accounts.presale_token_vault_pda.key();
+
+        // Transfer SOL from buyer to presale SOL vault using system program
+        let cpi_accounts = anchor_lang::system_program::Transfer {
+            from: ctx.accounts.buyer.to_account_info(),
+            to: ctx.accounts.sol_vault.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.system_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        anchor_lang::system_program::transfer(cpi_ctx, sol_amount)?;
+
+        // Validate presale token vault (manual validation) - scope the borrow
+        let (presale_token_vault_mint, presale_token_vault_owner) = {
+            let presale_token_vault_data = ctx.accounts.presale_token_vault.try_borrow_data()?;
+            require!(presale_token_vault_data.len() >= 64, PresaleError::PaymentTokenNotAllowed);
+            let mint = Pubkey::try_from_slice(&presale_token_vault_data[0..32])
+                .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+            let owner = Pubkey::try_from_slice(&presale_token_vault_data[32..64])
+                .map_err(|_| PresaleError::PaymentTokenNotAllowed)?;
+            (mint, owner)
+        }; // Borrow dropped here
+
+        require!(
+            presale_token_vault_mint == presale_token_mint,
+            PresaleError::PaymentTokenNotAllowed
+        );
+        require!(
+            presale_token_vault_owner == presale_token_vault_pda_key,
+            PresaleError::PaymentTokenNotAllowed
+        );
+
+        // Transfer presale tokens from presale vault to buyer
+        let seeds = &[
+            b"presale_token_vault_pda",
+            presale_token_mint.as_ref(),
+            &[presale_token_vault_pda_bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.presale_token_vault.to_account_info(),
+            to: ctx.accounts.buyer_token_account.to_account_info(),
+            authority: ctx.accounts.presale_token_vault_pda.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, tokens_to_receive)?;
+
+        // Update state (now we can mutably borrow)
+        let presale_state = &mut ctx.accounts.presale_state;
+        presale_state.total_tokens_sold = presale_state
+            .total_tokens_sold
+            .checked_add(tokens_to_receive)
+            .ok_or(PresaleError::Overflow)?;
+        presale_state.total_raised = presale_state
+            .total_raised
+            .checked_add(sol_amount)
+            .ok_or(PresaleError::Overflow)?;
+
+        // Update user purchase tracker
+        let user_purchase = &mut ctx.accounts.user_purchase;
+        if user_purchase.buyer == Pubkey::default() {
+            user_purchase.buyer = ctx.accounts.buyer.key();
+            user_purchase.total_purchased = 0;
+        }
+        user_purchase.total_purchased = user_purchase
+            .total_purchased
+            .checked_add(tokens_to_receive)
+            .ok_or(PresaleError::Overflow)?;
+
+        msg!(
+            "Buy with SOL successful: {} tokens for {} lamports",
+            tokens_to_receive,
+            sol_amount
         );
 
         Ok(())
@@ -311,6 +731,12 @@ pub mod presale {
             PresaleError::Unauthorized
         );
         
+        // Validate treasury address is not default
+        require!(
+            treasury_address != Pubkey::default(),
+            PresaleError::InvalidTreasuryAddress
+        );
+        
         let old_treasury = presale_state.treasury_address;
         presale_state.treasury_address = treasury_address;
         
@@ -322,7 +748,31 @@ pub mod presale {
         Ok(())
     }
 
-    // Withdraw payment tokens from PDA vault to treasury address (admin or governance only)
+    /// Withdraws payment tokens from presale vault to treasury
+    ///
+    /// Transfers accumulated payment tokens from the presale vault to the configured
+    /// treasury address. Can be called by admin or governance.
+    ///
+    /// # Parameters
+    /// - `ctx`: WithdrawToTreasury context with all required accounts
+    /// - `amount`: Amount of payment tokens to withdraw (must be > 0)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if withdrawal completes
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin or governance
+    /// - `PresaleError::TreasuryNotSet` if treasury address not configured
+    /// - `PresaleError::InvalidAmount` if amount is 0 or exceeds vault balance
+    ///
+    /// # Events
+    /// - Emits `TreasuryWithdrawn` with amount and treasury address
+    ///
+    /// # Security
+    /// - Requires admin or governance authority
+    /// - Validates treasury address is set
+    /// - Validates amount is positive
+    /// - Checks vault has sufficient balance
     pub fn withdraw_to_treasury(
         ctx: Context<WithdrawToTreasury>,
         amount: u64,
@@ -340,32 +790,25 @@ pub mod presale {
             PresaleError::TreasuryNotSet
         );
         
-        // Validate treasury token account mint and owner
-        // Read account data (SPL token account layout: mint at offset 0, owner at offset 32)
+        // Validate treasury token account (manual validation)
         let treasury_token_data = ctx.accounts.treasury_token_account.try_borrow_data()?;
-        require!(
-            treasury_token_data.len() >= 64,
-            PresaleError::InvalidTreasuryAccount
-        );
-        let treasury_mint = Pubkey::try_from_slice(&treasury_token_data[0..32])
+        require!(treasury_token_data.len() >= 64, PresaleError::InvalidTreasuryAccount);
+        let treasury_token_mint = Pubkey::try_from_slice(&treasury_token_data[0..32])
             .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
-        let treasury_owner = Pubkey::try_from_slice(&treasury_token_data[32..64])
+        let treasury_token_owner = Pubkey::try_from_slice(&treasury_token_data[32..64])
             .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
         require!(
-            treasury_mint == ctx.accounts.payment_token_mint.key(),
+            treasury_token_mint == ctx.accounts.payment_token_mint.key(),
             PresaleError::InvalidTreasuryAccount
         );
         require!(
-            treasury_owner == presale_state.treasury_address,
+            treasury_token_owner == presale_state.treasury_address,
             PresaleError::InvalidTreasuryAccount
         );
-        
-        // Validate payment vault mint and authority
+
+        // Validate payment vault (manual validation)
         let payment_vault_data = ctx.accounts.presale_payment_vault.try_borrow_data()?;
-        require!(
-            payment_vault_data.len() >= 64,
-            PresaleError::InvalidTreasuryAccount
-        );
+        require!(payment_vault_data.len() >= 64, PresaleError::InvalidTreasuryAccount);
         let payment_vault_mint = Pubkey::try_from_slice(&payment_vault_data[0..32])
             .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
         let payment_vault_owner = Pubkey::try_from_slice(&payment_vault_data[32..64])
@@ -378,6 +821,24 @@ pub mod presale {
             payment_vault_owner == ctx.accounts.presale_payment_vault_pda.key(),
             PresaleError::InvalidTreasuryAccount
         );
+        
+        // Validate amount is greater than 0
+        require!(
+            amount > 0,
+            PresaleError::InvalidAmount
+        );
+        
+        // Check withdrawal balance (ensure vault has enough)
+        // Token account layout: mint (0-32), owner (32-64), amount (64-72)
+        require!(payment_vault_data.len() >= 72, PresaleError::InvalidAmount);
+        let vault_balance = u64::from_le_bytes(
+            payment_vault_data[64..72].try_into().map_err(|_| PresaleError::InvalidAmount)?
+        );
+        require!(
+            vault_balance >= amount,
+            PresaleError::InvalidAmount
+        );
+        
         
         // Transfer from PDA vault to treasury
         let presale_state_key = presale_state.key();
@@ -399,8 +860,100 @@ pub mod presale {
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
         token::transfer(cpi_ctx, amount)?;
         
+        // Emit event
+        emit!(TreasuryWithdrawn {
+            amount,
+            treasury: presale_state.treasury_address,
+        });
+
         msg!(
             "Withdrew {} payment tokens to treasury: {}",
+            amount,
+            presale_state.treasury_address
+        );
+        
+        Ok(())
+    }
+
+    /// Withdraws native SOL from presale SOL vault to treasury
+    ///
+    /// Transfers accumulated SOL from the presale SOL vault to the configured
+    /// treasury address. Can be called by admin or governance.
+    ///
+    /// # Parameters
+    /// - `ctx`: WithdrawSolToTreasury context with all required accounts
+    /// - `amount`: Amount of SOL to withdraw in lamports (must be > 0)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if withdrawal completes
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin or governance
+    /// - `PresaleError::TreasuryNotSet` if treasury address not configured
+    /// - `PresaleError::InvalidAmount` if amount is 0 or exceeds vault balance
+    ///
+    /// # Events
+    /// - Emits `TreasuryWithdrawn` with amount and treasury address
+    ///
+    /// # Security
+    /// - Requires admin or governance authority
+    /// - Validates treasury address is set
+    /// - Validates amount is positive
+    /// - Checks vault has sufficient balance
+    pub fn withdraw_sol_to_treasury(
+        ctx: Context<WithdrawSolToTreasury>,
+        amount: u64,
+    ) -> Result<()> {
+        let presale_state = &ctx.accounts.presale_state;
+        
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        require!(
+            presale_state.treasury_address != Pubkey::default(),
+            PresaleError::TreasuryNotSet
+        );
+        
+        // Validate amount is greater than 0
+        require!(
+            amount > 0,
+            PresaleError::InvalidAmount
+        );
+        
+        // Check vault has enough SOL
+        require!(
+            ctx.accounts.sol_vault.lamports() >= amount,
+            PresaleError::InvalidAmount
+        );
+        
+        // Transfer SOL from vault to treasury using system program
+        let presale_state_key = presale_state.key();
+        let seeds = &[
+            b"presale_sol_vault",
+            presale_state_key.as_ref(),
+            &[ctx.bumps.sol_vault],
+        ];
+        let signer = &[&seeds[..]];
+        
+        let cpi_accounts = anchor_lang::system_program::Transfer {
+            from: ctx.accounts.sol_vault.to_account_info(),
+            to: ctx.accounts.treasury.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.system_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        anchor_lang::system_program::transfer(cpi_ctx, amount)?;
+        
+        // Emit event
+        emit!(TreasuryWithdrawn {
+            amount,
+            treasury: presale_state.treasury_address,
+        });
+
+        msg!(
+            "Withdrew {} lamports to treasury: {}",
             amount,
             presale_state.treasury_address
         );
@@ -565,10 +1118,10 @@ pub struct Buy<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
     
-    /// CHECK: Buyer's payment token account (validated by constraint in function)
+    /// CHECK: Buyer's payment token account (validated manually)
     #[account(mut)]
     pub buyer_payment_token_account: UncheckedAccount<'info>,
-    
+
     // PDA that will own the payment token vault ATA
     /// CHECK: This is a PDA used for signing
     #[account(
@@ -580,12 +1133,12 @@ pub struct Buy<'info> {
         bump
     )]
     pub presale_payment_vault_pda: UncheckedAccount<'info>,
-    
+
     // ATA owned by the payment vault PDA
-    /// CHECK: Validated in function (mint and authority checked manually)
+    /// CHECK: Validated manually
     #[account(mut)]
     pub presale_payment_vault: UncheckedAccount<'info>,
-    
+
     // PDA that will own the presale token vault ATA
     /// CHECK: This is a PDA used for signing
     #[account(
@@ -596,13 +1149,13 @@ pub struct Buy<'info> {
         bump
     )]
     pub presale_token_vault_pda: UncheckedAccount<'info>,
-    
+
     // ATA owned by the presale token vault PDA
-    /// CHECK: Validated in function (mint and authority checked manually)
+    /// CHECK: Validated manually
     #[account(mut)]
     pub presale_token_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: Buyer's token account (validated by constraint in function)
+
+    /// CHECK: Buyer's token account (validated manually)
     #[account(mut)]
     pub buyer_token_account: UncheckedAccount<'info>,
     
@@ -611,6 +1164,20 @@ pub struct Buy<'info> {
     
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        space = 8 + UserPurchase::LEN,
+        seeds = [b"user_purchase", presale_state.key().as_ref(), buyer.key().as_ref()],
+        bump
+    )]
+    pub user_purchase: Account<'info, UserPurchase>,
+
+    /// CHECK: Optional blacklist account for buyer (validated in function)
+    pub buyer_blacklist: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -654,12 +1221,12 @@ pub struct WithdrawToTreasury<'info> {
     pub presale_payment_vault_pda: UncheckedAccount<'info>,
     
     // ATA owned by the payment vault PDA (source)
-    /// CHECK: Validated in function (mint and authority checked manually)
+    /// CHECK: Validated manually
     #[account(mut)]
     pub presale_payment_vault: UncheckedAccount<'info>,
-    
+
     // Treasury token account (destination)
-    /// CHECK: Validated in function (mint and authority checked manually)
+    /// CHECK: Validated manually
     #[account(mut)]
     pub treasury_token_account: UncheckedAccount<'info>,
     
@@ -668,6 +1235,110 @@ pub struct WithdrawToTreasury<'info> {
     
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct BuyWithSol<'info> {
+    #[account(
+        mut,
+        seeds = [b"presale_state"],
+        bump
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    // Token program state to check emergency pause
+    /// CHECK: Token program state PDA (validated by constraint)
+    #[account(
+        constraint = token_state.key() == presale_state.token_program_state @ PresaleError::InvalidTokenProgramState
+    )]
+    pub token_state: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    
+    // PDA that owns the SOL vault
+    /// CHECK: This is a PDA that will receive SOL (created automatically on first transfer)
+    #[account(
+        mut,
+        seeds = [
+            b"presale_sol_vault",
+            presale_state.key().as_ref()
+        ],
+        bump
+    )]
+    pub sol_vault: UncheckedAccount<'info>,
+
+    // PDA that will own the presale token vault ATA
+    /// CHECK: This is a PDA used for signing
+    #[account(
+        seeds = [
+            b"presale_token_vault_pda",
+            presale_state.presale_token_mint.as_ref()
+        ],
+        bump
+    )]
+    pub presale_token_vault_pda: UncheckedAccount<'info>,
+
+    // ATA owned by the presale token vault PDA
+    /// CHECK: Validated manually
+    #[account(mut)]
+    pub presale_token_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Buyer's token account (validated manually)
+    #[account(mut)]
+    pub buyer_token_account: UncheckedAccount<'info>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        space = 8 + UserPurchase::LEN,
+        seeds = [b"user_purchase", presale_state.key().as_ref(), buyer.key().as_ref()],
+        bump
+    )]
+    pub user_purchase: Account<'info, UserPurchase>,
+
+    /// CHECK: Optional blacklist account for buyer (validated in function)
+    pub buyer_blacklist: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawSolToTreasury<'info> {
+    #[account(
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+    
+    // PDA that owns the SOL vault
+    /// CHECK: This is a PDA used for signing
+    #[account(
+        mut,
+        seeds = [
+            b"presale_sol_vault",
+            presale_state.key().as_ref()
+        ],
+        bump
+    )]
+    pub sol_vault: SystemAccount<'info>,
+    
+    /// CHECK: Treasury wallet (validated by constraint)
+    #[account(
+        mut,
+        constraint = treasury.key() == presale_state.treasury_address @ PresaleError::InvalidTreasuryAddress
+    )]
+    pub treasury: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
 
 // State Structures
@@ -685,12 +1356,14 @@ pub struct PresaleState {
     pub total_raised: u64,
     pub governance_set: bool, // Track if governance has been set
     pub treasury_address: Pubkey, // Treasury wallet address (settable via set_treasury_address)
+    pub max_presale_cap: u64, // Maximum presale cap (0 = unlimited)
+    pub max_per_user: u64, // Maximum per user purchase (0 = unlimited)
     pub bump: u8, // PDA bump
 }
 
 impl PresaleState {
-    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 1; 
-    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + treasury_address + bump
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 8 + 8 + 1; 
+    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + treasury_address + max_presale_cap + max_per_user + bump
 }
 
 #[account]
@@ -702,6 +1375,16 @@ pub struct AllowedToken {
 
 impl AllowedToken {
     pub const LEN: usize = 32 + 32 + 1; // presale_state + mint + is_allowed
+}
+
+#[account]
+pub struct UserPurchase {
+    pub buyer: Pubkey,
+    pub total_purchased: u64,
+}
+
+impl UserPurchase {
+    pub const LEN: usize = 32 + 8; // buyer + total_purchased
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
@@ -734,4 +1417,16 @@ pub enum PresaleError {
     TreasuryNotSet,
     #[msg("Invalid treasury token account")]
     InvalidTreasuryAccount,
+    #[msg("Invalid treasury address")]
+    InvalidTreasuryAddress,
+    #[msg("Presale cap exceeded")]
+    PresaleCapExceeded,
+    #[msg("Per user limit exceeded")]
+    PerUserLimitExceeded,
+    #[msg("Invalid account")]
+    InvalidAccount,
+    #[msg("Invalid amount")]
+    InvalidAmount,
+    #[msg("Buyer is blacklisted")]
+    BuyerBlacklisted,
 }

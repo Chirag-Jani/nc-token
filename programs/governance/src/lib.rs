@@ -1,3 +1,37 @@
+//! # Governance Program
+//!
+//! A multisig governance system for managing protocol changes with:
+//! - Multi-signer approval requirements
+//! - Transaction queuing with cooldown periods
+//! - Cross-program invocations (CPIs) to token and presale programs
+//! - Emergency pause functionality
+//! - Comprehensive transaction types for protocol management
+//!
+//! ## Security Features
+//! - Minimum 2 approvals required (prevents single-point-of-failure)
+//! - Cooldown periods prevent instant execution
+//! - All queue operations require authorized signer
+//! - Reentrancy protection on critical functions
+//! - Duplicate signer prevention
+//!
+//! ## Transaction Flow
+//! 1. Queue: Authorized signer queues a transaction
+//! 2. Approve: Multiple signers approve the transaction
+//! 3. Execute: After cooldown, transaction is executed via CPI
+//!
+//! ## Transaction Types
+//! - Unpause: Unpause the token program
+//! - Blacklist: Add/remove addresses from blacklist
+//! - NoSellLimit: Grant/revoke sell limit exemptions
+//! - Restricted: Add/remove restricted addresses
+//! - LiquidityPool: Mark/unmark liquidity pools
+//! - BridgeAddress: Update bridge contract address
+//! - BondAddress: Update bond contract address
+//! - TreasuryAddress: Update treasury address
+//! - WithdrawToTreasury: Withdraw funds to treasury
+//! - SetRequiredApprovals: Change approval requirements
+//! - SetCooldownPeriod: Change cooldown period
+
 use anchor_lang::prelude::*;
 
 declare_id!("5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj");
@@ -13,7 +47,30 @@ use presale::program::Presale;
 pub mod governance {
     use super::*;
 
-    /// Initialize the governance program
+    /// Initializes the governance program with multisig configuration
+    ///
+    /// Sets up the governance state with signers, approval requirements, and cooldown period.
+    /// This is a one-time operation that establishes the governance structure.
+    ///
+    /// # Parameters
+    /// - `ctx`: Initialize context
+    /// - `required_approvals`: Minimum number of approvals needed (must be >= 2)
+    /// - `cooldown_period`: Minimum cooldown period in seconds (must be >= 1800)
+    /// - `signers`: List of authorized signer addresses (must be unique, max 10)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if initialization completes
+    ///
+    /// # Errors
+    /// - `GovernanceError::RequiredApprovalsTooLow` if required_approvals < 2
+    /// - `GovernanceError::CooldownPeriodTooLow` if cooldown < 1800 seconds
+    /// - `GovernanceError::DuplicateSigners` if signers list contains duplicates
+    /// - `GovernanceError::InvalidRequiredApprovals` if required_approvals > signers.len()
+    ///
+    /// # Security
+    /// - Prevents duplicate signers
+    /// - Enforces minimum approval threshold
+    /// - Validates all parameters before initialization
     pub fn initialize(
         ctx: Context<Initialize>,
         required_approvals: u8,
@@ -41,6 +98,14 @@ pub mod governance {
             GovernanceError::InvalidRequiredApprovals
         );
 
+        // Check for duplicate signers
+        use std::collections::HashSet;
+        let unique_signers: HashSet<_> = signers.iter().collect();
+        require!(
+            unique_signers.len() == signers.len(),
+            GovernanceError::DuplicateSigners
+        );
+
         let governance_state = &mut ctx.accounts.governance_state;
         governance_state.authority = ctx.accounts.authority.key();
         governance_state.required_approvals = required_approvals;
@@ -63,11 +128,40 @@ pub mod governance {
     }
 
     /// Set the token program address
+    /// Sets the token program address for CPI calls
+    ///
+    /// Configures the governance program to interact with the token program.
+    /// This is a one-time setup that must be done before queuing token-related transactions.
+    ///
+    /// # Parameters
+    /// - `ctx`: SetTokenProgram context (requires authority signer)
+    /// - `token_program`: The token program ID (must not be default)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if token program is set
+    ///
+    /// # Errors
+    /// - `GovernanceError::Unauthorized` if caller is not authority
+    /// - `GovernanceError::InvalidAccount` if token_program is default
+    ///
+    /// # Security
+    /// - Can only be set once
+    /// - Requires authority signer
     pub fn set_token_program(ctx: Context<SetTokenProgram>, token_program: Pubkey) -> Result<()> {
         let governance_state = &mut ctx.accounts.governance_state;
         require!(
             !governance_state.token_program_set,
             GovernanceError::TokenProgramAlreadySet
+        );
+        // Enforce multisig
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.authority.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate token program is not default
+        require!(
+            token_program != Pubkey::default(),
+            GovernanceError::InvalidAccount
         );
         governance_state.token_program = token_program;
         governance_state.token_program_set = true;
@@ -76,11 +170,40 @@ pub mod governance {
     }
 
     /// Set the presale program address
+    /// Sets the presale program address for CPI calls
+    ///
+    /// Configures the governance program to interact with the presale program.
+    /// This is a one-time setup that must be done before queuing presale-related transactions.
+    ///
+    /// # Parameters
+    /// - `ctx`: SetPresaleProgram context (requires authority signer)
+    /// - `presale_program`: The presale program ID (must not be default)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if presale program is set
+    ///
+    /// # Errors
+    /// - `GovernanceError::Unauthorized` if caller is not authority
+    /// - `GovernanceError::InvalidAccount` if presale_program is default
+    ///
+    /// # Security
+    /// - Can only be set once
+    /// - Requires authority signer
     pub fn set_presale_program(ctx: Context<SetPresaleProgram>, presale_program: Pubkey) -> Result<()> {
         let governance_state = &mut ctx.accounts.governance_state;
         require!(
             !governance_state.presale_program_set,
             GovernanceError::PresaleProgramAlreadySet
+        );
+        // Enforce multisig
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.authority.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate presale program is not default
+        require!(
+            presale_program != Pubkey::default(),
+            GovernanceError::InvalidAccount
         );
         governance_state.presale_program = presale_program;
         governance_state.presale_program_set = true;
@@ -89,11 +212,34 @@ pub mod governance {
     }
 
     /// Queue a transaction to unpause the token
+    /// Queues a transaction to unpause the token program
+    ///
+    /// Creates a queued transaction that will unpause the token program after
+    /// the required approvals and cooldown period.
+    ///
+    /// # Parameters
+    /// - `ctx`: QueueUnpause context (requires authorized signer)
+    ///
+    /// # Returns
+    /// - `Result<u64>`: Transaction ID if queued successfully
+    ///
+    /// # Errors
+    /// - `GovernanceError::NotAuthorizedSigner` if caller is not authorized
+    /// - `GovernanceError::TokenProgramNotSet` if token program not configured
+    ///
+    /// # Security
+    /// - Requires authorized signer to queue
+    /// - Transaction must be approved and executed separately
     pub fn queue_unpause(ctx: Context<QueueUnpause>) -> Result<u64> {
         let governance_state = &mut ctx.accounts.governance_state;
         require!(
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
+        );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
         );
 
         let tx_id = governance_state.next_transaction_id;
@@ -124,7 +270,28 @@ pub mod governance {
         Ok(tx_id)
     }
 
-    /// Queue a transaction to set blacklist
+    /// Queues a transaction to set blacklist status
+    ///
+    /// Creates a queued transaction that will add or remove an address from the blacklist
+    /// after required approvals and cooldown period.
+    ///
+    /// # Parameters
+    /// - `ctx`: QueueSetBlacklist context (requires authorized signer)
+    /// - `account`: Address to blacklist/unblacklist (must not be default)
+    /// - `value`: `true` to blacklist, `false` to unblacklist
+    ///
+    /// # Returns
+    /// - `Result<u64>`: Transaction ID if queued successfully
+    ///
+    /// # Errors
+    /// - `GovernanceError::NotAuthorizedSigner` if caller is not authorized
+    /// - `GovernanceError::InvalidAccount` if account is default
+    /// - `GovernanceError::InvalidDataLength` if data encoding fails
+    ///
+    /// # Security
+    /// - Requires authorized signer to queue
+    /// - Validates account is not default
+    /// - Validates data length (33 bytes: 32 for pubkey + 1 for bool)
     pub fn queue_set_blacklist(
         ctx: Context<QueueSetBlacklist>,
         account: Pubkey,
@@ -134,6 +301,16 @@ pub mod governance {
         require!(
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
+        );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate account is not default
+        require!(
+            account != Pubkey::default(),
+            GovernanceError::InvalidAccount
         );
 
         let tx_id = governance_state.next_transaction_id;
@@ -181,6 +358,16 @@ pub mod governance {
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
         );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate account is not default
+        require!(
+            account != Pubkey::default(),
+            GovernanceError::InvalidAccount
+        );
 
         let tx_id = governance_state.next_transaction_id;
         governance_state.next_transaction_id += 1;
@@ -191,6 +378,11 @@ pub mod governance {
         let mut data = Vec::new();
         data.extend_from_slice(&account.to_bytes());
         data.push(if value { 1 } else { 0 });
+        // Validate data length
+        require!(
+            data.len() == 33,
+            GovernanceError::InvalidDataLength
+        );
 
         let transaction = &mut ctx.accounts.transaction;
         transaction.id = tx_id;
@@ -226,6 +418,16 @@ pub mod governance {
         require!(
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
+        );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate account is not default
+        require!(
+            account != Pubkey::default(),
+            GovernanceError::InvalidAccount
         );
 
         let tx_id = governance_state.next_transaction_id;
@@ -273,6 +475,16 @@ pub mod governance {
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
         );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate pool is not default
+        require!(
+            pool != Pubkey::default(),
+            GovernanceError::InvalidAccount
+        );
 
         let tx_id = governance_state.next_transaction_id;
         governance_state.next_transaction_id += 1;
@@ -318,6 +530,16 @@ pub mod governance {
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
         );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate bridge address is not default
+        require!(
+            bridge_address != Pubkey::default(),
+            GovernanceError::InvalidAccount
+        );
 
         let tx_id = governance_state.next_transaction_id;
         governance_state.next_transaction_id += 1;
@@ -360,6 +582,16 @@ pub mod governance {
         require!(
             governance_state.token_program_set,
             GovernanceError::TokenProgramNotSet
+        );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate bond address is not default
+        require!(
+            bond_address != Pubkey::default(),
+            GovernanceError::InvalidAccount
         );
 
         let tx_id = governance_state.next_transaction_id;
@@ -404,6 +636,16 @@ pub mod governance {
             governance_state.presale_program_set,
             GovernanceError::PresaleProgramNotSet
         );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate treasury address is not default
+        require!(
+            treasury_address != Pubkey::default(),
+            GovernanceError::InvalidAccount
+        );
 
         let tx_id = governance_state.next_transaction_id;
         governance_state.next_transaction_id += 1;
@@ -447,6 +689,16 @@ pub mod governance {
             governance_state.presale_program_set,
             GovernanceError::PresaleProgramNotSet
         );
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        // Validate amount is greater than 0
+        require!(
+            amount > 0,
+            GovernanceError::InvalidAmount
+        );
 
         let tx_id = governance_state.next_transaction_id;
         governance_state.next_transaction_id += 1;
@@ -480,12 +732,37 @@ pub mod governance {
         Ok(tx_id)
     }
 
-    /// Queue a transaction to set required approvals (CRITICAL: Must use multisig)
+    /// Queues a transaction to change required approval threshold
+    ///
+    /// Creates a queued transaction that will update the minimum number of approvals
+    /// required for transaction execution. This is a critical governance parameter.
+    ///
+    /// # Parameters
+    /// - `ctx`: QueueSetRequiredApprovals context (requires authorized signer)
+    /// - `required`: New required approval count (must be >= 2 and <= signers.len())
+    ///
+    /// # Returns
+    /// - `Result<u64>`: Transaction ID if queued successfully
+    ///
+    /// # Errors
+    /// - `GovernanceError::NotAuthorizedSigner` if caller is not authorized
+    /// - `GovernanceError::RequiredApprovalsTooLow` if required < 2
+    /// - `GovernanceError::RequiredApprovalsTooHigh` if required > signers.len()
+    ///
+    /// # Security
+    /// - Requires authorized signer to queue
+    /// - Enforces minimum 2 approvals
+    /// - Prevents setting threshold higher than signer count
     pub fn queue_set_required_approvals(
         ctx: Context<QueueSetRequiredApprovals>,
         required: u8,
     ) -> Result<u64> {
         let governance_state = &mut ctx.accounts.governance_state;
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
         require!(
             required >= GovernanceState::MIN_REQUIRED_APPROVALS,
             GovernanceError::RequiredApprovalsTooLow
@@ -527,15 +804,44 @@ pub mod governance {
         Ok(tx_id)
     }
 
-    /// Queue a transaction to set cooldown period (CRITICAL: Must use multisig)
+    /// Queues a transaction to change cooldown period
+    ///
+    /// Creates a queued transaction that will update the minimum cooldown period
+    /// required before transaction execution. This is a critical governance parameter.
+    ///
+    /// # Parameters
+    /// - `ctx`: QueueSetCooldownPeriod context (requires authorized signer)
+    /// - `period`: New cooldown period in seconds (must be >= 1800 and <= MAX_COOLDOWN_SECONDS)
+    ///
+    /// # Returns
+    /// - `Result<u64>`: Transaction ID if queued successfully
+    ///
+    /// # Errors
+    /// - `GovernanceError::NotAuthorizedSigner` if caller is not authorized
+    /// - `GovernanceError::CooldownPeriodTooLow` if period < 1800 seconds
+    /// - `GovernanceError::CooldownPeriodTooHigh` if period > MAX_COOLDOWN_SECONDS
+    ///
+    /// # Security
+    /// - Requires authorized signer to queue
+    /// - Enforces minimum 30-minute cooldown
+    /// - Enforces maximum cooldown limit
     pub fn queue_set_cooldown_period(
         ctx: Context<QueueSetCooldownPeriod>,
         period: i64,
     ) -> Result<u64> {
         let governance_state = &mut ctx.accounts.governance_state;
+        // Enforce multisig at queue step
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.initiator.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
         require!(
             period >= GovernanceState::MIN_COOLDOWN_SECONDS,
             GovernanceError::CooldownPeriodTooLow
+        );
+        require!(
+            period <= GovernanceState::MAX_COOLDOWN_SECONDS,
+            GovernanceError::CooldownPeriodTooHigh
         );
 
         let tx_id = governance_state.next_transaction_id;
@@ -571,6 +877,29 @@ pub mod governance {
     }
 
     /// Approve a transaction
+    /// Approves a queued transaction
+    ///
+    /// Adds the caller's approval to a queued transaction. When enough approvals
+    /// are collected (meeting the required_approvals threshold), the transaction
+    /// can be executed after the cooldown period expires.
+    ///
+    /// # Parameters
+    /// - `ctx`: ApproveTransaction context (requires authorized signer)
+    /// - `tx_id`: The transaction ID to approve
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if approval is added
+    ///
+    /// # Errors
+    /// - `GovernanceError::NotAuthorizedSigner` if caller is not authorized
+    /// - `GovernanceError::TransactionNotFound` if transaction doesn't exist
+    /// - `GovernanceError::TransactionAlreadyExecuted` if transaction already executed
+    /// - `GovernanceError::AlreadyApproved` if signer already approved
+    ///
+    /// # Security
+    /// - Reentrancy protection (checks status before modification)
+    /// - Prevents duplicate approvals
+    /// - Only authorized signers can approve
     pub fn approve_transaction(ctx: Context<ApproveTransaction>, tx_id: u64) -> Result<()> {
         let governance_state = &ctx.accounts.governance_state;
         let transaction = &mut ctx.accounts.transaction;
@@ -579,6 +908,7 @@ pub mod governance {
             transaction.id == tx_id,
             GovernanceError::InvalidTransactionId
         );
+        // Reentrancy guard - check transaction not already executed
         require!(
             transaction.status == TransactionStatus::Pending,
             GovernanceError::TransactionNotPending
@@ -587,7 +917,7 @@ pub mod governance {
             !transaction.has_approved(ctx.accounts.approver.key()),
             GovernanceError::AlreadyApproved
         );
-        // CRITICAL: Only authorized signers can approve
+        // Only authorized signers can approve
         require!(
             governance_state.is_authorized_signer(&ctx.accounts.approver.key()),
             GovernanceError::NotAuthorizedSigner
@@ -596,20 +926,15 @@ pub mod governance {
         transaction.add_approval(ctx.accounts.approver.key());
 
         msg!(
-            "Transaction {} approved by {}",
+            "Transaction {} approved by {} ({} of {} required)",
             tx_id,
-            ctx.accounts.approver.key()
+            ctx.accounts.approver.key(),
+            transaction.approval_count,
+            governance_state.required_approvals
         );
 
-        // Check if we have enough approvals and cooldown has passed
-        if transaction.approval_count >= governance_state.required_approvals {
-            let clock = Clock::get()?;
-            if clock.unix_timestamp >= transaction.execute_after {
-                // Auto-execute if conditions are met
-                transaction.status = TransactionStatus::Executed;
-                msg!("Transaction {} auto-executed", tx_id);
-            }
-        }
+        // Execution should only occur via execute_transaction after cooldown expires
+        // Do not auto-execute or check cooldown here
 
         Ok(())
     }
@@ -620,7 +945,14 @@ pub mod governance {
         tx_id: u64,
         reason: String,
     ) -> Result<()> {
+        let governance_state = &ctx.accounts.governance_state;
         let transaction = &mut ctx.accounts.transaction;
+
+        // Enforce multisig - only authorized signers can reject
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.approver.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
 
         require!(
             transaction.id == tx_id,
@@ -631,6 +963,11 @@ pub mod governance {
             GovernanceError::TransactionNotPending
         );
         require!(!reason.is_empty(), GovernanceError::EmptyRejectionReason);
+        // Limit reason length to prevent log overflow
+        require!(
+            reason.len() <= 256,
+            GovernanceError::EmptyRejectionReason
+        );
 
         transaction.status = TransactionStatus::Rejected;
         transaction.rejection_reason = reason.clone();
@@ -647,6 +984,29 @@ pub mod governance {
     }
 
     /// Execute a transaction (if cooldown expired and approved)
+    /// Executes a queued transaction after cooldown
+    ///
+    /// Executes a transaction that has received sufficient approvals and passed
+    /// the cooldown period. Performs actual CPI calls to apply state changes.
+    ///
+    /// # Parameters
+    /// - `ctx`: ExecuteTransaction context with all required accounts for CPI
+    /// - `tx_id`: The transaction ID to execute
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if transaction is executed
+    ///
+    /// # Errors
+    /// - `GovernanceError::TransactionNotFound` if transaction doesn't exist
+    /// - `GovernanceError::TransactionAlreadyExecuted` if already executed
+    /// - `GovernanceError::InsufficientApprovals` if not enough approvals
+    /// - `GovernanceError::CooldownNotExpired` if cooldown period hasn't passed
+    ///
+    /// # Security
+    /// - Reentrancy protection (marks as executed immediately)
+    /// - Enforces cooldown period
+    /// - Validates approval count before execution
+    /// - Performs actual CPI calls to apply changes
     pub fn execute_transaction(ctx: Context<ExecuteTransaction>, tx_id: u64) -> Result<()> {
         let governance_state = &mut ctx.accounts.governance_state;
         let transaction = &mut ctx.accounts.transaction;
@@ -655,10 +1015,13 @@ pub mod governance {
             transaction.id == tx_id,
             GovernanceError::InvalidTransactionId
         );
+        // Reentrancy guard - check transaction not already executed
         require!(
             transaction.status == TransactionStatus::Pending,
             GovernanceError::TransactionNotPending
         );
+        // Mark as executing immediately to prevent reentrancy
+        transaction.status = TransactionStatus::Executed;
 
         let clock = Clock::get()?;
         require!(
@@ -670,7 +1033,7 @@ pub mod governance {
             GovernanceError::InsufficientApprovals
         );
 
-        // CRITICAL: Execute real CPI calls based on transaction type
+        // Execute real CPI calls based on transaction type
         match transaction.tx_type {
             TransactionType::Unpause => {
                 // Get bump before mutable borrow
@@ -695,17 +1058,29 @@ pub mod governance {
                     .map_err(|_| GovernanceError::InvalidAccount)?;
                 let value = transaction.data[32] != 0;
 
-                // Derive blacklist PDA - accounts must be passed via remaining_accounts
-                // For now, we'll use a simplified approach that requires accounts to be passed
-                // Full implementation requires adding accounts to ExecuteTransaction context
-                msg!(
-                    "Transaction {} executed: Blacklist {} = {} (requires account derivation)",
-                    tx_id,
-                    account_pubkey,
-                    value
+                // Verify target account matches
+                require!(
+                    account_pubkey == ctx.accounts.target_account.key(),
+                    GovernanceError::InvalidAccount
                 );
-                // TODO: Add blacklist, account, payer accounts to ExecuteTransaction context
-                // or use remaining_accounts for dynamic account passing
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetBlacklist {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    blacklist: ctx.accounts.blacklist_account.to_account_info(),
+                    account: ctx.accounts.target_account.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                    payer: ctx.accounts.payer.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_blacklist(cpi_ctx, account_pubkey, value)?;
+                msg!("Transaction {} executed: Blacklist {} = {}", tx_id, account_pubkey, value);
             }
             TransactionType::NoSellLimit => {
                 if transaction.data.len() < 33 {
@@ -714,13 +1089,30 @@ pub mod governance {
                 let account_pubkey = Pubkey::try_from_slice(&transaction.data[0..32])
                     .map_err(|_| GovernanceError::InvalidAccount)?;
                 let value = transaction.data[32] != 0;
-                msg!(
-                    "Transaction {} executed: NoSellLimit {} = {} (requires account derivation)",
-                    tx_id,
-                    account_pubkey,
-                    value
+
+                // Verify target account matches
+                require!(
+                    account_pubkey == ctx.accounts.target_account.key(),
+                    GovernanceError::InvalidAccount
                 );
-                // TODO: Add no_sell_limit, account, payer accounts to ExecuteTransaction context
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetNoSellLimit {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    no_sell_limit: ctx.accounts.no_sell_limit_account.to_account_info(),
+                    account: ctx.accounts.target_account.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                    payer: ctx.accounts.payer.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_no_sell_limit(cpi_ctx, account_pubkey, value)?;
+                msg!("Transaction {} executed: NoSellLimit {} = {}", tx_id, account_pubkey, value);
             }
             TransactionType::Restrict => {
                 if transaction.data.len() < 33 {
@@ -729,13 +1121,30 @@ pub mod governance {
                 let account_pubkey = Pubkey::try_from_slice(&transaction.data[0..32])
                     .map_err(|_| GovernanceError::InvalidAccount)?;
                 let value = transaction.data[32] != 0;
-                msg!(
-                    "Transaction {} executed: Restrict {} = {} (requires account derivation)",
-                    tx_id,
-                    account_pubkey,
-                    value
+
+                // Verify target account matches
+                require!(
+                    account_pubkey == ctx.accounts.target_account.key(),
+                    GovernanceError::InvalidAccount
                 );
-                // TODO: Add restricted, account, payer accounts to ExecuteTransaction context
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetRestricted {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    restricted: ctx.accounts.restricted_account.to_account_info(),
+                    account: ctx.accounts.target_account.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                    payer: ctx.accounts.payer.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_restricted(cpi_ctx, account_pubkey, value)?;
+                msg!("Transaction {} executed: Restrict {} = {}", tx_id, account_pubkey, value);
             }
             TransactionType::Pair => {
                 if transaction.data.len() < 33 {
@@ -744,13 +1153,30 @@ pub mod governance {
                 let pool_pubkey = Pubkey::try_from_slice(&transaction.data[0..32])
                     .map_err(|_| GovernanceError::InvalidAccount)?;
                 let value = transaction.data[32] != 0;
-                msg!(
-                    "Transaction {} executed: LiquidityPool {} = {} (requires account derivation)",
-                    tx_id,
-                    pool_pubkey,
-                    value
+
+                // Verify pool address matches
+                require!(
+                    pool_pubkey == ctx.accounts.pool_address.key(),
+                    GovernanceError::InvalidAccount
                 );
-                // TODO: Add liquidity_pool, pool, payer accounts to ExecuteTransaction context
+
+                // Get bump before mutable borrow
+                let bump = governance_state.bump;
+                let cpi_program = ctx.accounts.token_program_program.to_account_info();
+                let cpi_accounts = spl_project::cpi::accounts::SetLiquidityPool {
+                    state: ctx.accounts.state_pda.to_account_info(),
+                    liquidity_pool: ctx.accounts.liquidity_pool_account.to_account_info(),
+                    pool: ctx.accounts.pool_address.to_account_info(),
+                    governance: ctx.accounts.governance_state.to_account_info(),
+                    payer: ctx.accounts.payer.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                };
+                // Sign with governance state PDA
+                let governance_seeds = &[b"governance".as_ref(), &[bump]];
+                let signer_seeds: &[&[&[u8]]] = &[governance_seeds];
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                spl_project::cpi::set_liquidity_pool(cpi_ctx, pool_pubkey, value)?;
+                msg!("Transaction {} executed: LiquidityPool {} = {}", tx_id, pool_pubkey, value);
             }
             TransactionType::SetRequiredApprovals => {
                 if transaction.data.len() < 1 {
@@ -784,6 +1210,10 @@ pub mod governance {
                 require!(
                     period >= GovernanceState::MIN_COOLDOWN_SECONDS,
                     GovernanceError::CooldownPeriodTooLow
+                );
+                require!(
+                    period <= GovernanceState::MAX_COOLDOWN_SECONDS,
+                    GovernanceError::CooldownPeriodTooHigh
                 );
                 governance_state.cooldown_period = period;
                 msg!(
@@ -887,8 +1317,7 @@ pub mod governance {
             }
         }
 
-        // Mark transaction as executed
-        transaction.status = TransactionStatus::Executed;
+        // Transaction status already set to Executed at start for reentrancy protection
         msg!("Transaction {} executed successfully", tx_id);
 
         Ok(())
@@ -897,13 +1326,19 @@ pub mod governance {
     /// Set required approvals (REMOVED - must use queued transaction)
     /// This function is kept for backwards compatibility but should not be used.
     /// Use queue_set_required_approvals instead.
+    /// DEPRECATED: Direct setter bypasses queue mechanism
+    /// Use queue_set_required_approvals instead
     pub fn set_required_approvals(ctx: Context<SetRequiredApprovals>, required: u8) -> Result<()> {
-        // CRITICAL: Prevent setting to 1
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.authority.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        
         require!(
             required >= GovernanceState::MIN_REQUIRED_APPROVALS,
             GovernanceError::RequiredApprovalsTooLow
         );
-        let governance_state = &mut ctx.accounts.governance_state;
         require!(
             governance_state.authority == ctx.accounts.authority.key(),
             GovernanceError::Unauthorized
@@ -913,26 +1348,29 @@ pub mod governance {
             GovernanceError::RequiredApprovalsTooHigh
         );
         governance_state.required_approvals = required;
-        msg!("Required approvals set to {}", required);
+        msg!("Required approvals set to {} (DEPRECATED: use queue mechanism)", required);
         Ok(())
     }
 
-    /// Set cooldown period (REMOVED - must use queued transaction)
-    /// This function is kept for backwards compatibility but should not be used.
-    /// Use queue_set_cooldown_period instead.
+    /// DEPRECATED: Direct setter bypasses queue mechanism
+    /// Use queue_set_cooldown_period instead
     pub fn set_cooldown_period(ctx: Context<SetCooldownPeriod>, period: i64) -> Result<()> {
-        // CRITICAL: Enforce minimum cooldown
+        let governance_state = &mut ctx.accounts.governance_state;
+        require!(
+            governance_state.is_authorized_signer(&ctx.accounts.authority.key()),
+            GovernanceError::NotAuthorizedSigner
+        );
+        
         require!(
             period >= GovernanceState::MIN_COOLDOWN_SECONDS,
             GovernanceError::CooldownPeriodTooLow
         );
-        let governance_state = &mut ctx.accounts.governance_state;
         require!(
             governance_state.authority == ctx.accounts.authority.key(),
             GovernanceError::Unauthorized
         );
         governance_state.cooldown_period = period;
-        msg!("Cooldown period set to {} seconds", period);
+        msg!("Cooldown period set to {} seconds (DEPRECATED: use queue mechanism)", period);
         Ok(())
     }
 
@@ -962,7 +1400,7 @@ pub mod governance {
     /// Emergency pause (1 signer allowed, no cooldown)
     pub fn emergency_pause(ctx: Context<EmergencyPause>) -> Result<()> {
         let governance_state = &ctx.accounts.governance_state;
-        // CRITICAL: Allow any authorized signer (1-of-3) to pause
+        // Allow any authorized signer to pause
         require!(
             governance_state.is_authorized_signer(&ctx.accounts.authority.key()),
             GovernanceError::NotAuthorizedSigner
@@ -1013,6 +1451,7 @@ impl GovernanceState {
     pub const LEN: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 32 + 1 + 1 + 4 + (32 * 10); // discriminator + fields + vec overhead + max 10 signers
     pub const MIN_REQUIRED_APPROVALS: u8 = 2;
     pub const MIN_COOLDOWN_SECONDS: i64 = 1800; // 30 minutes
+    pub const MAX_COOLDOWN_SECONDS: i64 = 2592000; // 30 days
     pub const MAX_SIGNERS: usize = 10;
 
     pub fn is_authorized_signer(&self, signer: &Pubkey) -> bool {
@@ -1118,6 +1557,10 @@ pub enum GovernanceError {
     InvalidRequiredApprovals,
     #[msg("Invalid cooldown period")]
     InvalidCooldownPeriod,
+    #[msg("Cooldown period too low")]
+    CooldownPeriodTooLow,
+    #[msg("Cooldown period too high")]
+    CooldownPeriodTooHigh,
     #[msg("Invalid account")]
     InvalidAccount,
     #[msg("Invalid role")]
@@ -1130,8 +1573,12 @@ pub enum GovernanceError {
     RequiredApprovalsTooLow,
     #[msg("Required approvals exceeds signer count")]
     RequiredApprovalsTooHigh,
-    #[msg("Minimum cooldown period not met")]
-    CooldownPeriodTooLow,
+    #[msg("Duplicate signers in signer list")]
+    DuplicateSigners,
+    #[msg("Invalid data length")]
+    InvalidDataLength,
+    #[msg("Invalid amount")]
+    InvalidAmount,
 }
 
 // Context structures
@@ -1387,6 +1834,29 @@ pub struct ExecuteTransaction<'info> {
     /// CHECK: Payer for CPI account creation (governance state)
     #[account(mut)]
     pub payer: UncheckedAccount<'info>,
+
+    // Optional accounts for Blacklist, NoSellLimit, Restrict, Pair transactions
+    /// CHECK: Blacklist account (for Blacklist transaction)
+    #[account(mut)]
+    pub blacklist_account: UncheckedAccount<'info>,
+
+    /// CHECK: Account being blacklisted/restricted/etc (for Blacklist, NoSellLimit, Restrict transactions)
+    pub target_account: UncheckedAccount<'info>,
+
+    /// CHECK: NoSellLimit account (for NoSellLimit transaction)
+    #[account(mut)]
+    pub no_sell_limit_account: UncheckedAccount<'info>,
+
+    /// CHECK: Restricted account (for Restrict transaction)
+    #[account(mut)]
+    pub restricted_account: UncheckedAccount<'info>,
+
+    /// CHECK: LiquidityPool account (for Pair transaction)
+    #[account(mut)]
+    pub liquidity_pool_account: UncheckedAccount<'info>,
+
+    /// CHECK: Pool address (for Pair transaction)
+    pub pool_address: UncheckedAccount<'info>,
 
     pub clock: Sysvar<'info, Clock>,
 }
