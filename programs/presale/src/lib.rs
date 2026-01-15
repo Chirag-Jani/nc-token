@@ -960,6 +960,204 @@ pub mod presale {
         
         Ok(())
     }
+
+    /// Update maximum presale cap
+    /// Allows authority (admin or governance) to adjust the total presale cap after initialization
+    ///
+    /// # Parameters
+    /// - `ctx`: UpdatePresaleCap context (requires authority)
+    /// - `new_cap`: New maximum presale cap in payment token base units
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if cap is updated
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not authority
+    /// - `PresaleError::InvalidAmount` if new cap < current raised amount
+    /// - `PresaleError::InvalidStatus` if presale has stopped
+    ///
+    /// # Security
+    /// - Only authority (admin or governance) can update caps
+    /// - Cannot set cap below already raised amount
+    /// - Cannot update after presale is stopped (but can update when paused)
+    pub fn update_presale_cap(ctx: Context<UpdatePresaleCap>, new_cap: u64) -> Result<()> {
+        let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (admin or governance)
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        // Validate new cap is reasonable (0 = unlimited is allowed)
+        // If setting a limit, it must be greater than already raised
+        if new_cap > 0 {
+            require!(
+                new_cap >= presale_state.total_raised,
+                PresaleError::InvalidAmount
+            );
+        }
+        
+        // Cannot update if presale is stopped (but paused is okay)
+        require!(
+            presale_state.status != PresaleStatus::Stopped,
+            PresaleError::InvalidStatus
+        );
+        
+        let old_cap = presale_state.max_presale_cap;
+        presale_state.max_presale_cap = new_cap;
+        
+        msg!(
+            "Presale cap updated from {} to {} by authority {}",
+            old_cap,
+            new_cap,
+            ctx.accounts.authority.key()
+        );
+        
+        Ok(())
+    }
+
+    /// Update maximum contribution per user
+    /// Allows authority (admin or governance) to adjust the per-user contribution limit after initialization
+    ///
+    /// # Parameters
+    /// - `ctx`: UpdateMaxPerUser context (requires authority)
+    /// - `new_max`: New maximum contribution per user in payment token base units
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if max is updated
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not authority
+    /// - `PresaleError::InvalidAmount` if new max exceeds presale cap (when cap is set)
+    /// - `PresaleError::InvalidStatus` if presale has stopped
+    ///
+    /// # Security
+    /// - Only authority (admin or governance) can update limits
+    /// - Must be less than or equal to total presale cap (if cap is set)
+    /// - Cannot update after presale is stopped (but paused is okay)
+    pub fn update_max_per_user(ctx: Context<UpdateMaxPerUser>, new_max: u64) -> Result<()> {
+        let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (admin or governance)
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        // Validate new max is reasonable (0 = unlimited is allowed)
+        // If both max_per_user and max_presale_cap are set, max_per_user must be <= max_presale_cap
+        if new_max > 0 && presale_state.max_presale_cap > 0 {
+            require!(
+                new_max <= presale_state.max_presale_cap,
+                PresaleError::InvalidAmount
+            );
+        }
+        
+        // Cannot update if presale is stopped (but paused is okay)
+        require!(
+            presale_state.status != PresaleStatus::Stopped,
+            PresaleError::InvalidStatus
+        );
+        
+        let old_max = presale_state.max_per_user;
+        presale_state.max_per_user = new_max;
+        
+        msg!(
+            "Max per user updated from {} to {} by authority {}",
+            old_max,
+            new_max,
+            ctx.accounts.authority.key()
+        );
+        
+        Ok(())
+    }
+
+    /// Update both presale cap and max per user atomically
+    /// Allows authority (admin or governance) to adjust both limits in a single transaction
+    ///
+    /// # Parameters
+    /// - `ctx`: UpdatePresaleLimits context (requires authority)
+    /// - `new_presale_cap`: New maximum presale cap (optional, None = no change)
+    /// - `new_max_per_user`: New maximum per user (optional, None = no change)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if limits are updated
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not authority
+    /// - `PresaleError::InvalidAmount` if validation fails
+    /// - `PresaleError::InvalidStatus` if presale has stopped
+    ///
+    /// # Security
+    /// - Atomic update ensures consistency
+    /// - All validations applied
+    /// - Cannot update after presale is stopped
+    pub fn update_presale_limits(
+        ctx: Context<UpdatePresaleLimits>,
+        new_presale_cap: Option<u64>,
+        new_max_per_user: Option<u64>,
+    ) -> Result<()> {
+        let presale_state = &mut ctx.accounts.presale_state;
+        
+        // Verify authority (admin or governance)
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        // Cannot update if presale is stopped (but paused is okay)
+        require!(
+            presale_state.status != PresaleStatus::Stopped,
+            PresaleError::InvalidStatus
+        );
+        
+        // Track the effective cap for validation
+        let mut effective_cap = presale_state.max_presale_cap;
+        
+        // Update presale cap if provided
+        if let Some(new_cap) = new_presale_cap {
+            // If setting a limit (not 0), it must be >= already raised
+            if new_cap > 0 {
+                require!(
+                    new_cap >= presale_state.total_raised,
+                    PresaleError::InvalidAmount
+                );
+            }
+            
+            let old_cap = presale_state.max_presale_cap;
+            presale_state.max_presale_cap = new_cap;
+            effective_cap = new_cap;
+            
+            msg!("Presale cap updated from {} to {}", old_cap, new_cap);
+        }
+        
+        // Update max per user if provided
+        if let Some(new_max) = new_max_per_user {
+            // If both limits are set (not 0), max_per_user must be <= cap
+            if new_max > 0 && effective_cap > 0 {
+                require!(
+                    new_max <= effective_cap,
+                    PresaleError::InvalidAmount
+                );
+            }
+            
+            let old_max = presale_state.max_per_user;
+            presale_state.max_per_user = new_max;
+            
+            msg!("Max per user updated from {} to {}", old_max, new_max);
+        }
+        
+        msg!(
+            "Presale limits updated by authority {}",
+            ctx.accounts.authority.key()
+        );
+        
+        Ok(())
+    }
 }
 
 // Account Structures
@@ -1341,7 +1539,56 @@ pub struct WithdrawSolToTreasury<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
+
+#[derive(Accounts)]
+pub struct UpdatePresaleCap<'info> {
+    #[account(
+        mut,
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMaxPerUser<'info> {
+    #[account(
+        mut,
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdatePresaleLimits<'info> {
+    #[account(
+        mut,
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+}
+
 // State Structures
+
+
 
 #[account]
 pub struct PresaleState {
