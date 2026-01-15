@@ -1376,16 +1376,25 @@ pub mod governance {
 
     /// Grant a role
     pub fn grant_role(ctx: Context<GrantRole>, role: u8, account: Pubkey) -> Result<()> {
+
+        require!(governance_state.is_authorized_signer(&ctx.accounts.authority.key()), GovernanceError::NotAuthorizedSigner);
+
+        require(account != ctx.accounts.authority.key(), GovernanaceError::Unauthorized);
+
         let role_account = &mut ctx.accounts.role_account;
         role_account.account = account;
         role_account.role = role;
         role_account.has_role = true;
-        msg!("Role {} granted to {}", role, account);
+        msg!("Role {} granted to {} by {}", role, account, ctx.accounts.authority.key());
         Ok(())
     }
 
     /// Revoke a role
     pub fn revoke_role(ctx: Context<RevokeRole>, role: u8, account: Pubkey) -> Result<()> {
+        let governance_state = &ctx.accounts.governance_state;
+
+        require!(governance_state.is_authorized_signer(&ctx.accounts.authority.key()), GovernanaceError::NotAuthorizedSigner);
+
         let role_account = &mut ctx.accounts.role_account;
         require!(
             role_account.account == account,
@@ -1393,7 +1402,7 @@ pub mod governance {
         );
         require!(role_account.role == role, GovernanceError::InvalidRole);
         role_account.has_role = false;
-        msg!("Role {} revoked from {}", role, account);
+        msg!("Role {} revoked from {} by {}", role, account, ctx.accounts.authority.key());
         Ok(())
     }
 
@@ -1525,10 +1534,10 @@ pub enum TransactionStatus {
 }
 
 // Role constants
-pub const ADMIN_ROLE: u8 = 1;
-pub const SIGNER_ROLE: u8 = 2;
-pub const APPROVER_ROLE: u8 = 3;
-pub const MANAGER_ROLE: u8 = 4;
+// pub const ADMIN_ROLE: u8 = 1;
+// pub const SIGNER_ROLE: u8 = 2;
+// pub const APPROVER_ROLE: u8 = 3;
+// pub const MANAGER_ROLE: u8 = 4;
 
 // Error codes
 #[error_code]
@@ -1892,7 +1901,7 @@ pub struct GrantRole<'info> {
     #[account(
         seeds = [b"governance"],
         bump = governance_state.bump,
-        constraint = governance_state.authority == authority.key() @ GovernanceError::Unauthorized
+        // constraint = governance_state.authority == authority.key() @ GovernanceError::Unauthorized
     )]
     pub governance_state: Account<'info, GovernanceState>,
 
@@ -1919,7 +1928,7 @@ pub struct RevokeRole<'info> {
     #[account(
         seeds = [b"governance"],
         bump = governance_state.bump,
-        constraint = governance_state.authority == authority.key() @ GovernanceError::Unauthorized
+        // constraint = governance_state.authority == authority.key() @ GovernanceError::Unauthorized
     )]
     pub governance_state: Account<'info, GovernanceState>,
 

@@ -24,6 +24,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::spl_token::instruction::AuthorityType;
 use anchor_spl::token::{self, Burn, MintTo, SetAuthority, Token, Transfer, TokenAccount};
+use anchor_spl::token::spl_token::state::Account as SplTokenAccount;
 
 declare_id!("HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz");
 
@@ -41,6 +42,12 @@ pub enum TokenError {
     MathOverflow,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Program version mismatch")]
+    VersionMismatch,
+    #[msg("Incompatible program version")]
+    IncompatibleVersion,
+    #[msg(Invalid Token Account)]
+    InvalidTokenAccount,
 }
 
 #[event]
@@ -63,6 +70,7 @@ pub struct EmergencyPauseChanged {
 #[event]
 pub struct InitializeEvent {
     pub authority: Pubkey,
+    pub version: u16,
 }
 
 #[event]
@@ -140,11 +148,15 @@ pub mod spl_project {
         state.max_supply = None; // No supply cap by default
         state.current_supply = 0; // Track current supply
         state.whitelist_mode = false; // Whitelist mode disabled by default
+        state.version = TokenState::CURRENT_VERSION;
+        state.min_compatible_version = TokenState::MIN_COMPATIBLE_VERSION;
 
         // Emit event
         emit!(InitializeEvent {
             authority: state.authority,
         });
+
+        msg!("Token program initialized version: {}", state.version);
 
         msg!("Token program initialized by: {:?}", state.authority);
         Ok(())
@@ -173,6 +185,8 @@ pub mod spl_project {
         new_authority: Pubkey,
     ) -> Result<()> {
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
         // Only current authority can propose change
         require!(
             state.authority == ctx.accounts.authority.key(),
@@ -218,6 +232,8 @@ pub mod spl_project {
     /// - Requires 7-day cooldown to prevent instant governance takeover
     pub fn set_governance(ctx: Context<SetGovernance>, new_authority: Pubkey) -> Result<()> {
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
         // Only current authority can execute
         require!(
             state.authority == ctx.accounts.authority.key(),
@@ -277,6 +293,8 @@ pub mod spl_project {
     /// - Pause affects all token operations immediately
     pub fn set_emergency_pause(ctx: Context<SetEmergencyPause>, value: bool) -> Result<()> {
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
         // Verify that the caller is the governance authority
         require!(
             state.authority == ctx.accounts.governance.key(),
@@ -316,6 +334,9 @@ pub mod spl_project {
     /// - Prevents silent overwrite of existing blacklist entries
     pub fn set_blacklist(ctx: Context<SetBlacklist>, account: Pubkey, value: bool) -> Result<()> {
         let state = &ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -369,6 +390,9 @@ pub mod spl_project {
     /// - Requires governance authority (prevents self-whitelisting)
     pub fn set_whitelist(ctx: Context<SetWhitelist>, account: Pubkey, value: bool) -> Result<()> {
         let state = &ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -411,6 +435,9 @@ pub mod spl_project {
         value: bool,
     ) -> Result<()> {
         let state = &ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -449,6 +476,9 @@ pub mod spl_project {
     /// - Emits `RestrictedChanged` with account and status
     pub fn set_restricted(ctx: Context<SetRestricted>, account: Pubkey, value: bool) -> Result<()> {
         let state = &ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -491,6 +521,9 @@ pub mod spl_project {
         value: bool,
     ) -> Result<()> {
         let state = &ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -537,6 +570,9 @@ pub mod spl_project {
         bridge_address: Pubkey,
     ) -> Result<()> {
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -579,6 +615,9 @@ pub mod spl_project {
         bond_address: Pubkey,
     ) -> Result<()> {
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         require!(
             state.authority == ctx.accounts.governance.key(),
             TokenError::Unauthorized
@@ -629,6 +668,8 @@ pub mod spl_project {
         let state_account_info = ctx.accounts.state.to_account_info();
         
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
         
         // Check emergency pause
         require!(!state.emergency_paused, TokenError::EmergencyPaused);
@@ -646,12 +687,18 @@ pub mod spl_project {
             // Get token account owner from account data (SPL token account layout: owner at offset 32)
             // to is UncheckedAccount, so we need to read raw data
             let to_account_data = ctx.accounts.to.try_borrow_data()?;
-            require!(
-                to_account_data.len() >= 64,
-                TokenError::Unauthorized
-            );
-            let owner = Pubkey::try_from_slice(&to_account_data[32..64])
-                .map_err(|_| TokenError::Unauthorized)?;
+            // require!(
+            //     to_account_data.len() >= 64,
+            //     TokenError::Unauthorized
+            // );
+            let token_account = SplTokenAccount::unpack(&to_account_data)
+                .map_err(|_| TokenError::InvalidTokenAccount)?;
+
+            require!(token_account.mint == ctx.accounts.mint.key(), TokenError::InvalidTokenAccount);
+
+            // let owner = Pubkey::try_from_slice(&to_account_data[32..64])
+            //     .map_err(|_| TokenError::Unauthorized)?;
+            let owner = token_account.owner;
 
             // Check blacklist if account is provided and not default
             if ctx.accounts.recipient_blacklist.key() != Pubkey::default() {
@@ -751,6 +798,8 @@ pub mod spl_project {
         let state_account_info = ctx.accounts.state.to_account_info();
         
         let state = &mut ctx.accounts.state;
+
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
         
         // Check emergency pause
         require!(!state.emergency_paused, TokenError::EmergencyPaused);
@@ -766,9 +815,16 @@ pub mod spl_project {
         let owner = {
             // from is UncheckedAccount, so we need to read raw data
             let from_account_data = ctx.accounts.from.try_borrow_data()?;
-            require!(from_account_data.len() >= 64, TokenError::Unauthorized);
-            let owner = Pubkey::try_from_slice(&from_account_data[32..64])
-                .map_err(|_| TokenError::Unauthorized)?;
+
+            let token_account = SplTokenAccount::unpack(&from_account_data)
+                .map_err(|_| TokenError::InvalidTokenAccount)?;
+
+            require!(token_account.mint == ctx.accounts.mint.key(), TokenError::InvalidTokenAccount);
+            // require!(from_account_data.len() >= 64, TokenError::Unauthorized);
+
+            let owner = token_account.owner;
+            // let owner = Pubkey::try_from_slice(&from_account_data[32..64])
+            //     .map_err(|_| TokenError::Unauthorized)?;
             // Borrow is dropped here when the block ends
             owner
         };
@@ -840,31 +896,68 @@ pub mod spl_project {
     pub fn transfer_tokens(ctx: Context<TransferTokens>, amount: u64) -> Result<()> {
         let state = &mut ctx.accounts.state;
 
+        require!(state.version >= state.min_compatible_version, TokenError::IncompatibleVersion);
+
         // Check emergency pause
         require!(!state.emergency_paused, TokenError::EmergencyPaused);
 
         // Get sender and recipient addresses from token accounts
         // Validate and extract owner from token account data
-        let from_account_data = ctx.accounts.from_account.try_borrow_data()?;
-        require!(from_account_data.len() >= 64, TokenError::Unauthorized);
-        let sender = Pubkey::try_from_slice(&from_account_data[32..64])
-            .map_err(|_| TokenError::Unauthorized)?;
+        // let from_account_data = ctx.accounts.from_account.try_borrow_data()?;
+        // require!(from_account_data.len() >= 64, TokenError::Unauthorized);
+        // let sender = Pubkey::try_from_slice(&from_account_data[32..64])
+        //     .map_err(|_| TokenError::Unauthorized)?;
 
-        let to_account_data = ctx.accounts.to_account.try_borrow_data()?;
-        require!(to_account_data.len() >= 64, TokenError::Unauthorized);
-        let _recipient = Pubkey::try_from_slice(&to_account_data[32..64])
-            .map_err(|_| TokenError::Unauthorized)?;
+        // let to_account_data = ctx.accounts.to_account.try_borrow_data()?;
+        // require!(to_account_data.len() >= 64, TokenError::Unauthorized);
+        // let _recipient = Pubkey::try_from_slice(&to_account_data[32..64])
+        //     .map_err(|_| TokenError::Unauthorized)?;
         
-        // Validate token accounts belong to the correct mint
-        // Token account layout: mint (0-32), owner (32-64)
-        let from_mint = Pubkey::try_from_slice(&from_account_data[0..32])
-            .map_err(|_| TokenError::Unauthorized)?;
-        let to_mint = Pubkey::try_from_slice(&to_account_data[0..32])
-            .map_err(|_| TokenError::Unauthorized)?;
+        // // Validate token accounts belong to the correct mint
+        // // Token account layout: mint (0-32), owner (32-64)
+        // let from_mint = Pubkey::try_from_slice(&from_account_data[0..32])
+        //     .map_err(|_| TokenError::Unauthorized)?;
+        // let to_mint = Pubkey::try_from_slice(&to_account_data[0..32])
+        //     .map_err(|_| TokenError::Unauthorized)?;
+        // require!(
+        //     from_mint == ctx.accounts.mint.key() && to_mint == ctx.accounts.mint.key(),
+        //     TokenError::Unauthorized
+        // );
+
+
+    // SAFE TOKEN ACCOUNT PARSING for sender
+    let (sender, from_balance) = {
+        let from_account_data = ctx.accounts.from_account.try_borrow_data()?;
+        
+        // Use SPL unpack instead of manual byte slicing
+        let from_token = SplTokenAccount::unpack(&from_account_data)
+            .map_err(|_| TokenError::InvalidTokenAccount)?;
+        
+        // Verify mint matches
         require!(
-            from_mint == ctx.accounts.mint.key() && to_mint == ctx.accounts.mint.key(),
-            TokenError::Unauthorized
+            from_token.mint == ctx.accounts.mint.key(),
+            TokenError::InvalidTokenAccount
         );
+        
+        (from_token.owner, from_token.amount)
+    };
+
+    // SAFE TOKEN ACCOUNT PARSING for recipient
+    let recipient = {
+        let to_account_data = ctx.accounts.to_account.try_borrow_data()?;
+        
+        // Use SPL unpack instead of manual byte slicing
+        let to_token = SplTokenAccount::unpack(&to_account_data)
+            .map_err(|_| TokenError::InvalidTokenAccount)?;
+        
+        // Verify mint matches
+        require!(
+            to_token.mint == ctx.accounts.mint.key(),
+            TokenError::InvalidTokenAccount
+        );
+        
+        to_token.owner
+    };
 
         // Check sender blacklist
         if ctx.accounts.sender_blacklist.key() != Pubkey::default() {
@@ -1295,12 +1388,16 @@ pub struct TokenState {
     pub max_supply: Option<u64>, // Maximum token supply (None = unlimited)
     pub current_supply: u64, // Current total supply (tracked for mint cap)
     pub whitelist_mode: bool, // If true, only whitelisted addresses can transfer
+    pub version: u16; 
+    pub min_compatible_version: u16;
 }
 
 impl TokenState {
     pub const GOVERNANCE_COOLDOWN_SECONDS: i64 = 604800; // 7 days
     // Size: 8 (discriminator) + 32 (authority) + 1 (bump) + 1 (emergency_paused) + 1 (sell_limit_percent) + 8 (sell_limit_period) + 32 (bridge_address) + 32 (bond_address) + 33 (Option<Pubkey>) + 9 (Option<i64>) + 9 (Option<u64>) + 8 (u64) + 1 (bool)
-    pub const LEN: usize = 8 + 32 + 1 + 1 + 1 + 8 + 32 + 32 + 33 + 9 + 9 + 8 + 1;
+    pub const CURRENT_VERSION: u16 = 1;
+    pub const MIN_COMPATIBLE_VERSION: u16 = 1;
+    pub const LEN: usize = 8 + 32 + 1 + 1 + 1 + 8 + 32 + 32 + 33 + 9 + 9 + 8 + 1 + 2 + 2;
 }
 
 #[account]
