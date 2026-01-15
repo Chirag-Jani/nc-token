@@ -24,6 +24,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::spl_token::instruction::AuthorityType;
 use anchor_spl::token::{self, Burn, MintTo, SetAuthority, Token, Transfer, TokenAccount};
+use anchor_spl::token::spl_token::solana_program::program_pack::Pack;
 use anchor_spl::token::spl_token::state::Account as SplTokenAccount;
 
 declare_id!("HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz");
@@ -154,6 +155,7 @@ pub mod spl_project {
         // Emit event
         emit!(InitializeEvent {
             authority: state.authority,
+            version: state.version,
         });
 
         msg!("Token program initialized version: {}", state.version);
@@ -1070,10 +1072,11 @@ pub mod spl_project {
 
                 // Get sender's token balance from token account data
                 // Token account layout: mint (0-32), owner (32-64), amount (64-72)
-                require!(from_account_data.len() >= 72, TokenError::Unauthorized);
-                let from_balance = u64::from_le_bytes(
-                    from_account_data[64..72].try_into().map_err(|_| TokenError::Unauthorized)?
-                );
+                // require!(from_account_data.len() >= 72, TokenError::Unauthorized);
+                // let from_balance = u64::from_le_bytes(
+                //     from_account_data[64..72].try_into().map_err(|_| TokenError::Unauthorized)?
+                // );
+                
 
                 // Calculate new total sold
                 let new_total = sell_tracker
@@ -1388,8 +1391,8 @@ pub struct TokenState {
     pub max_supply: Option<u64>, // Maximum token supply (None = unlimited)
     pub current_supply: u64, // Current total supply (tracked for mint cap)
     pub whitelist_mode: bool, // If true, only whitelisted addresses can transfer
-    pub version: u16; 
-    pub min_compatible_version: u16;
+    pub version: u16,
+    pub min_compatible_version: u16,
 }
 
 impl TokenState {

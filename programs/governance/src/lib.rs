@@ -1376,10 +1376,11 @@ pub mod governance {
 
     /// Grant a role
     pub fn grant_role(ctx: Context<GrantRole>, role: u8, account: Pubkey) -> Result<()> {
+        let governance_state = &ctx.accounts.governance_state;
 
         require!(governance_state.is_authorized_signer(&ctx.accounts.authority.key()), GovernanceError::NotAuthorizedSigner);
 
-        require(account != ctx.accounts.authority.key(), GovernanaceError::Unauthorized);
+        require!(account != ctx.accounts.authority.key(), GovernanceError::Unauthorized);
 
         let role_account = &mut ctx.accounts.role_account;
         role_account.account = account;
@@ -1393,7 +1394,7 @@ pub mod governance {
     pub fn revoke_role(ctx: Context<RevokeRole>, role: u8, account: Pubkey) -> Result<()> {
         let governance_state = &ctx.accounts.governance_state;
 
-        require!(governance_state.is_authorized_signer(&ctx.accounts.authority.key()), GovernanaceError::NotAuthorizedSigner);
+        require!(governance_state.is_authorized_signer(&ctx.accounts.authority.key()), GovernanceError::NotAuthorizedSigner);
 
         let role_account = &mut ctx.accounts.role_account;
         require!(
