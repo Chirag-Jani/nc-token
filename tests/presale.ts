@@ -65,6 +65,16 @@ describe("Presale Program Tests", () => {
   const PAYMENT_AMOUNT = 100 * 10 ** MINT_DECIMALS;
   const TOKENS_PER_PAYMENT = 100 * 10 ** MINT_DECIMALS; // 1:1 ratio
 
+  async function expectAnchorError(promise: Promise<any>, errorMsg: string) {
+    try {
+      await promise;
+      expect.fail("Expected error but transaction succeeded");
+    } catch (err: any) {
+      expect(err.toString()).to.include(errorMsg);
+    }
+  }
+  
+
   before(async () => {
     // Airdrop SOL to test accounts
     admin = Keypair.generate();
@@ -318,6 +328,144 @@ describe("Presale Program Tests", () => {
       }
     }
   });
+
+  
+  it("allows updating presale cap after initialization (FIXED)", async () => {
+    await presaleProgram.methods
+      .updatePresaleCap(new anchor.BN(1_000_000))
+      .accounts({
+        presaleState: presaleStatePda,
+        authority: admin.publicKey,
+      })
+      .signers([admin])
+      .rpc();
+  
+    const state = await presaleProgram.account.presaleState.fetch(presaleStatePda);
+    expect(state.maxPresaleCap.toNumber()).to.equal(1_000_000);
+  });
+  
+
+  it("allows updating max_per_user after initialization (FIXED)", async () => {
+    await presaleProgram.methods
+      .updateMaxPerUser(new anchor.BN(10_000))
+      .accounts({
+        presaleState: presaleStatePda,
+        authority: admin.publicKey,
+      })
+      .signers([admin])
+      .rpc();
+  
+    const state = await presaleProgram.account.presaleState.fetch(presaleStatePda);
+    expect(state.maxPerUser.toNumber()).to.equal(10_000);
+  });
+  
+
+  it("rejects max_per_user > max_presale_cap", async () => {
+    await expectAnchorError(
+      presaleProgram.methods
+        .updateMaxPerUser(new anchor.BN(2_000_000))
+        .accounts({
+          presaleState: presaleStatePda,
+          authority: admin.publicKey,
+        })
+        .signers([admin])
+        .rpc(),
+      "Invalid amount"
+    );
+  });
+  
+
+  it("updates presale cap and max_per_user atomically", async () => {
+    await presaleProgram.methods
+      .updatePresaleLimits(
+        new anchor.BN(2_000_000),
+        new anchor.BN(50_000)
+      )
+      .accounts({
+        presaleState: presaleStatePda,
+        authority: admin.publicKey,
+      })
+      .signers([admin])
+      .rpc();
+  
+    const state = await presaleProgram.account.presaleState.fetch(presaleStatePda);
+    expect(state.maxPresaleCap.toNumber()).to.equal(2_000_000);
+    expect(state.maxPerUser.toNumber()).to.equal(50_000);
+  });
+  
+
+  it("rejects updating caps after presale is stopped", async () => {
+    await presaleProgram.methods
+      .startPresale()
+      .accounts({
+        presaleState: presaleStatePda,
+        admin: admin.publicKey,
+      })
+      .signers([admin])
+      .rpc();
+  
+    await presaleProgram.methods
+      .stopPresale()
+      .accounts({
+        presaleState: presaleStatePda,
+        admin: admin.publicKey,
+      })
+      .signers([admin])
+      .rpc();
+  
+    await expectAnchorError(
+      presaleProgram.methods
+        .updatePresaleCap(new anchor.BN(999))
+        .accounts({
+          presaleState: presaleStatePda,
+          authority: admin.publicKey,
+        })
+        .signers([admin])
+        .rpc(),
+      "Invalid presale status"
+    );
+  });
+  
+
+  it("rejects cap update from unauthorized account", async () => {
+    await expectAnchorError(
+      presaleProgram.methods
+        .updatePresaleCap(new anchor.BN(123))
+        .accounts({
+          presaleState: presaleStatePda,
+          authority: buyer.publicKey,
+        })
+        .signers([buyer])
+        .rpc(),
+      "Unauthorized"
+    );
+  });
+  
+  it("rejects setting cap below total_raised", async () => {
+    // presale must be ACTIVE
+    await presaleProgram.methods.startPresale()
+      .accounts({ presaleState: presaleStatePda, admin: admin.publicKey })
+      .signers([admin])
+      .rpc();
+  
+    // buyer buys tokens (creates totalRaised)
+    await presaleProgram.methods.buy(new anchor.BN(100))
+      .accounts({...})
+      .signers([buyer])
+      .rpc();
+  
+    // now cap reduction should fail
+    await expectAnchorError(
+      presaleProgram.methods
+        .updatePresaleCap(new anchor.BN(50))
+        .accounts({ presaleState: presaleStatePda, authority: admin.publicKey })
+        .signers([admin])
+        .rpc(),
+      "Invalid amount"
+    );
+  });
+  
+  
 
   it("Allows admin to allow payment token", async () => {
     const [allowedTokenPda] = PublicKey.findProgramAddressSync(
