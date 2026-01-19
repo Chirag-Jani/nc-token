@@ -151,12 +151,22 @@ async function main() {
   // Step 3: Initialize presale program
   console.log("3️⃣ Initializing presale program...");
   try {
+    // Default: 133,000 NC tokens per SOL (if NC = $0.001 and SOL = $133)
+    // Stored as: 133_000 * 10^9 = 133_000_000_000_000 (with 9 decimals)
+    const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000);
+    const tokensPerSol = process.env.TOKENS_PER_SOL 
+      ? new anchor.BN(process.env.TOKENS_PER_SOL) 
+      : DEFAULT_TOKENS_PER_SOL;
+    
+    console.log("   Setting tokens_per_sol to:", tokensPerSol.toString());
+    
     const initTx = await presaleProgram.methods
       .initialize(
         walletKeypair.publicKey, // admin
         presaleTokenMint, // presale_token_mint (using main token mint)
         tokenProgram.programId, // token_program
-        tokenStatePda // token_program_state
+        tokenStatePda, // token_program_state
+        tokensPerSol // initial_tokens_per_sol
       )
       .accountsPartial({
         presaleState: presaleStatePda,
@@ -174,6 +184,7 @@ async function main() {
     console.log("   Presale Token Mint:", presaleState.presaleTokenMint.toString());
     console.log("   Token Program:", presaleState.tokenProgram.toString());
     console.log("   Status:", Object.keys(presaleState.status)[0]);
+    console.log("   Tokens per SOL:", presaleState.tokensPerSol.toString());
   } catch (err: any) {
     if (err.message?.includes("already in use")) {
       console.log("   ℹ️  Presale already initialized, skipping...");

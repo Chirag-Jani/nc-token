@@ -361,13 +361,26 @@ async function main() {
 
   console.log("\n8️⃣ Initializing presale...");
   try {
+    // Default: 133,000 NC tokens per SOL (if NC = $0.001 and SOL = $133)
+    // Stored as: 133_000 * 10^9 = 133_000_000_000_000 (with 9 decimals)
+    const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000);
+    const tokensPerSol = process.env.TOKENS_PER_SOL 
+      ? new anchor.BN(process.env.TOKENS_PER_SOL) 
+      : DEFAULT_TOKENS_PER_SOL;
+    
+    console.log("   Setting tokens_per_sol to:", tokensPerSol.toString());
+    
     const presaleTx = await presaleProgram.methods
-      .initialize()
+      .initialize(
+        walletKeypair.publicKey, // admin
+        mintKeypair.publicKey, // presale_token_mint
+        tokenProgram.programId, // token_program
+        tokenStatePda, // token_program_state
+        tokensPerSol // initial_tokens_per_sol
+      )
       .accountsPartial({
-        admin: walletKeypair.publicKey,
-        presaleTokenMint: mintKeypair.publicKey,
-        tokenProgram: tokenProgram.programId,
-        tokenProgramState: tokenStatePda,
+        presaleState: presaleStatePda,
+        payer: walletKeypair.publicKey,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
