@@ -795,12 +795,22 @@ pub mod presale {
             presale_state.tokens_per_sol > 0,
             PresaleError::InvalidAmount
         );
-        
-        let tokens_to_receive = sol_amount
-            .checked_mul(presale_state.tokens_per_sol)
+
+        // IMPORTANT: Use u128 intermediates to avoid u64 multiplication overflow.
+        // Large production rates (e.g., 133_000 * 10^9 tokens per SOL) can overflow u64
+        // even for small lamport amounts.
+        let tokens_to_receive_u128 = (sol_amount as u128)
+            .checked_mul(presale_state.tokens_per_sol as u128)
             .ok_or(PresaleError::Overflow)?
-            .checked_div(LAMPORTS_PER_SOL)
+            .checked_div(LAMPORTS_PER_SOL as u128)
             .ok_or(PresaleError::Overflow)?;
+
+        require!(
+            tokens_to_receive_u128 <= u64::MAX as u128,
+            PresaleError::Overflow
+        );
+
+        let tokens_to_receive = tokens_to_receive_u128 as u64;
         
         // Validate tokens_to_receive is greater than 0
         require!(
