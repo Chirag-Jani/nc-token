@@ -109,7 +109,11 @@ nc-token/
 │   ├── governance/     # Governance operations
 │   └── utils/          # Utility scripts
 ├── tests/              # Anchor tests
-├── docs/               # Documentation
+├── docs/               # Streamlined documentation
+│   ├── QUICKSTART.md   # Setup & build
+│   ├── OPERATIONS.md   # Deployment & scripts
+│   ├── ARCHITECTURE.md # Business logic
+│   └── REFERENCE.md    # Instruction list
 ├── reports/            # Project reports
 └── deployments/        # Deployment info (JSON)
 ```
@@ -127,10 +131,12 @@ Edit `Anchor.toml`:
 
 ## Documentation
 
-For detailed guides, see the `docs/` folder:
+The documentation has been streamlined for clarity and quick reference:
 
-- `SETUP.md` - Full setup instructions
-- `DEPLOYMENT_CHECKLIST.md` - Pre-deployment checklist
-- `DEPLOYMENT_COMMANDS.md` - Step-by-step deployment commands
-- `PRODUCTION_DEPLOYMENT_GUIDE.md` - Production deployment guide
-- `TREASURY_HYBRID_SETUP.md` - Treasury setup instructions
+- [🚀 Quickstart Guide](docs/QUICKSTART.md) - Setup, build, and deploy in minutes.
+- [🛠 Operations Guide](docs/OPERATIONS.md) - Production workflow, maintenance, and safety.
+- [🏗 Architecture & Security](docs/ARCHITECTURE.md) - Deep dive into governance, treasury, and oracle logic.
+- [📖 Reference](docs/REFERENCE.md) - Instruction map and project checklists.
+
+Historical documentation can be found in `docs/archive/`.
+
