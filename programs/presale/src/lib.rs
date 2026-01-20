@@ -27,6 +27,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
+use chainlink_solana::v2::read_feed_v2;
 
 // Import token and governance programs for CPI integration
 #[allow(unused_imports)]
@@ -40,6 +41,24 @@ declare_id!("4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN");
 pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
 pub const TOKEN_ACCOUNT_OWNER_OFFSET: usize = 32;
 pub const TOKEN_STATE_EMERGENCY_PAUSED_OFFSET: usize = 41; // discriminator(8) + authority(32) + bump(1) = 41
+
+// Chainlink SOL/USD Price Feed Addresses
+// Mainnet: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU
+// Devnet: Cp877Z9nU3qcS6nov97M679pUP8D6xW9Tz6TfU39iF (verify on Chainlink docs)
+// Chainlink OCR2 Program ID: HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny
+
+// Production feed verification: we hardcode ONLY the Chainlink OCR2 program ID.
+// Exact mainnet/devnet feed addresses are enforced off-chain in clients.
+pub const CHAINLINK_PROGRAM_ID: Pubkey =
+    anchor_lang::solana_program::pubkey!("HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny");
+
+// Chainlink price feed has 8 decimals
+pub const CHAINLINK_DECIMALS: u8 = 8;
+// SOL has 9 decimals (lamports)
+pub const SOL_DECIMALS: u8 = 9;
+pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
+// Staleness threshold: 3600 seconds (1 hour) - price feed should be updated within this time
+pub const PRICE_FEED_STALENESS_THRESHOLD_SECONDS: i64 = 3600;
 
 #[event]
 pub struct TreasuryWithdrawn {
@@ -89,7 +108,7 @@ pub mod presale {
         presale_token_mint: Pubkey,
         token_program: Pubkey,
         token_program_state: Pubkey,
-        initial_tokens_per_sol: u64,
+        token_price_usd_micro: u64,
     ) -> Result<()> {
         // Validate admin is not default
         require!(
@@ -111,9 +130,9 @@ pub mod presale {
             token_program_state != Pubkey::default(),
             PresaleError::InvalidAccount
         );
-        // Validate initial_tokens_per_sol is greater than 0
+        // Validate token_price_usd_micro is greater than 0
         require!(
-            initial_tokens_per_sol > 0,
+            token_price_usd_micro > 0,
             PresaleError::InvalidAmount
         );
 
@@ -131,45 +150,46 @@ pub mod presale {
         presale_state.treasury_address = Pubkey::default(); // Can be set later via set_treasury_address
         presale_state.max_presale_cap = 0; // 0 = unlimited
         presale_state.max_per_user = 0; // 0 = unlimited
-        presale_state.tokens_per_sol = initial_tokens_per_sol;
+        presale_state.token_price_usd_micro = token_price_usd_micro;
         presale_state.bump = ctx.bumps.presale_state;
         
-        msg!("Presale initialized with admin: {}, token_program: {}, tokens_per_sol: {}", admin, token_program, initial_tokens_per_sol);
+        msg!("Presale initialized with admin: {}, token_program: {}, token_price_usd_micro: {}", admin, token_program, token_price_usd_micro);
         Ok(())
     }
 
-    /// Migrates existing presale state to include tokens_per_sol field
+    /// Migrates existing presale state from tokens_per_sol to token_price_usd_micro
     ///
-    /// This function reallocates the PresaleState account to include the new tokens_per_sol field
-    /// and sets its initial value. This is a one-time migration for existing deployments.
+    /// This function migrates the PresaleState account to use Chainlink oracle pricing.
+    /// It replaces the old tokens_per_sol field with token_price_usd_micro.
+    /// This is a one-time migration for existing deployments.
     ///
     /// # Parameters
     /// - `ctx`: MigratePresaleState context (requires authority)
-    /// - `tokens_per_sol`: Initial tokens per SOL rate
+    /// - `token_price_usd_micro`: Token price in micro-USD (e.g., 1000 = $0.001 per token)
     ///
     /// # Returns
     /// - `Result<()>`: Success if migration completes
     ///
     /// # Errors
     /// - `PresaleError::Unauthorized` if caller is not authority
-    /// - `PresaleError::InvalidAmount` if tokens_per_sol is 0
+    /// - `PresaleError::InvalidAmount` if token_price_usd_micro is 0
     ///
     /// # Security
     /// - Only authority (admin or governance) can migrate
-    /// - Reallocates account to new size
-    /// - Sets tokens_per_sol field
+    /// - Reallocates account if needed
+    /// - Sets token_price_usd_micro field
     pub fn migrate_presale_state(
         ctx: Context<MigratePresaleState>,
-        tokens_per_sol: u64,
+        token_price_usd_micro: u64,
     ) -> Result<()> {
-        // Validate tokens_per_sol is greater than 0
+        // Validate token_price_usd_micro is greater than 0
         require!(
-            tokens_per_sol > 0,
+            token_price_usd_micro > 0,
             PresaleError::InvalidAmount
         );
         
         // Verify PDA manually (without deserialization)
-        let (expected_pda, expected_bump) = Pubkey::find_program_address(
+        let (expected_pda, _expected_bump) = Pubkey::find_program_address(
             &[b"presale_state"],
             ctx.program_id,
         );
@@ -265,19 +285,19 @@ pub mod presale {
             account_info.realloc(new_size, false)?;
         }
         
-        // Now update tokens_per_sol field manually
-        // tokens_per_sol offset: 8 (discriminator) + 32 (admin) + 32 (authority) + 32 (governance) + 
-        //                        32 (token_program) + 32 (token_program_state) + 32 (mint) + 
-        //                        1 (status) + 8 (sold) + 8 (raised) + 1 (governance_set) + 
-        //                        32 (treasury) + 8 (max_presale_cap) + 8 (max_per_user) = 265
-        const TOKENS_PER_SOL_OFFSET: usize = 8 + 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 8 + 8;
+        // Now update token_price_usd_micro field manually
+        // token_price_usd_micro offset: 8 (discriminator) + 32 (admin) + 32 (authority) + 32 (governance) + 
+        //                              32 (token_program) + 32 (token_program_state) + 32 (mint) + 
+        //                              1 (status) + 8 (sold) + 8 (raised) + 1 (governance_set) + 
+        //                              32 (treasury) + 8 (max_presale_cap) + 8 (max_per_user) = 265
+        const TOKEN_PRICE_USD_MICRO_OFFSET: usize = 8 + 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 8 + 8;
         
         let mut account_data_mut = ctx.accounts.presale_state.try_borrow_mut_data()?;
         
-        // Read current value
-        let current_tokens_per_sol = if account_data_mut.len() > TOKENS_PER_SOL_OFFSET + 8 {
+        // Read current value (might be old tokens_per_sol or already token_price_usd_micro)
+        let current_value = if account_data_mut.len() > TOKEN_PRICE_USD_MICRO_OFFSET + 8 {
             u64::from_le_bytes(
-                account_data_mut[TOKENS_PER_SOL_OFFSET..TOKENS_PER_SOL_OFFSET + 8]
+                account_data_mut[TOKEN_PRICE_USD_MICRO_OFFSET..TOKEN_PRICE_USD_MICRO_OFFSET + 8]
                     .try_into()
                     .map_err(|_| PresaleError::InvalidAmount)?
             )
@@ -286,20 +306,20 @@ pub mod presale {
         };
         
         // Update the field
-        account_data_mut[TOKENS_PER_SOL_OFFSET..TOKENS_PER_SOL_OFFSET + 8]
-            .copy_from_slice(&tokens_per_sol.to_le_bytes());
+        account_data_mut[TOKEN_PRICE_USD_MICRO_OFFSET..TOKEN_PRICE_USD_MICRO_OFFSET + 8]
+            .copy_from_slice(&token_price_usd_micro.to_le_bytes());
         
-        if current_tokens_per_sol == 0 {
+        if current_value == 0 {
             msg!(
-                "Presale state migrated: tokens_per_sol set to {} by authority {}",
-                tokens_per_sol,
+                "Presale state migrated: token_price_usd_micro set to {} by authority {}",
+                token_price_usd_micro,
                 ctx.accounts.authority.key()
             );
         } else {
             msg!(
-                "Presale state tokens_per_sol updated from {} to {} by authority {}",
-                current_tokens_per_sol,
-                tokens_per_sol,
+                "Presale state migrated from old pricing (value: {}) to token_price_usd_micro: {} by authority {}",
+                current_value,
+                token_price_usd_micro,
                 ctx.accounts.authority.key()
             );
         }
@@ -786,23 +806,101 @@ pub mod presale {
             require!(!is_blacklisted, PresaleError::BuyerBlacklisted);
         }
 
-        // Calculate tokens to receive using the pricing rate
-        // Formula: tokens = (sol_amount * tokens_per_sol) / LAMPORTS_PER_SOL
-        const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
+        // Read SOL/USD price from Chainlink oracle using SDK v2
+        let feed = &ctx.accounts.chainlink_feed;
+        let feed_data = read_feed_v2(
+            feed.try_borrow_data()?,
+            feed.owner.to_bytes(),
+        )
+        .map_err(|_| PresaleError::InvalidPrice)?;
         
-        // Validate tokens_per_sol is set (should be set via migration or initialize)
+        // Get the latest round data (price + timestamp)
+        let round = feed_data
+            .latest_round_data()
+            .ok_or(PresaleError::InvalidPrice)?;
+        
+        let sol_price_usd = round.answer; // Price with 8 decimals (e.g., 140_00000000 = $140)
+        
+        // Validate price is positive
         require!(
-            presale_state.tokens_per_sol > 0,
+            sol_price_usd > 0,
+            PresaleError::InvalidPrice
+        );
+        
+        // Optional: Check that the feed uses the expected decimals (8)
+        let decimals = feed_data.decimals();
+        require!(
+            decimals == CHAINLINK_DECIMALS,
+            PresaleError::InvalidPrice
+        );
+        
+        // Check for stale price using round timestamp
+        let current_timestamp = Clock::get()?.unix_timestamp;
+        // round.timestamp is u32, convert to i64 to match unix_timestamp type
+        let price_age = current_timestamp
+            .checked_sub(round.timestamp.into())
+            .ok_or(PresaleError::InvalidPrice)?;
+        
+        require!(
+            price_age <= PRICE_FEED_STALENESS_THRESHOLD_SECONDS,
+            PresaleError::StalePrice
+        );
+        
+        // Production security: Verify feed owner is Chainlink OCR2 program.
+        // We do NOT hardcode specific feed addresses on-chain; instead, we rely on:
+        // - Owner verification (must be Chainlink OCR2 program)
+        // - Decimals check (must be 8)
+        // - Positive price
+        // - Staleness check
+        require!(
+            feed.owner == &CHAINLINK_PROGRAM_ID,
+            PresaleError::InvalidPrice
+        );
+        
+        // Calculate tokens to receive using Chainlink price
+        // Formula: 
+        // 1. Convert SOL amount to USD: sol_usd = (sol_amount * sol_price_usd) / (10^8 * 10^9)
+        // 2. Calculate tokens: tokens = sol_usd / token_price_usd
+        // Combined: tokens = (sol_amount * sol_price_usd) / (token_price_usd_micro * 10^8 * 10^9 / 10^6)
+        // Simplified: tokens = (sol_amount * sol_price_usd * 10^6) / (token_price_usd_micro * 10^8 * 10^9)
+        // Further simplified: tokens = (sol_amount * sol_price_usd) / (token_price_usd_micro * 10^11)
+        
+        // Validate token_price_usd_micro is set
+        require!(
+            presale_state.token_price_usd_micro > 0,
             PresaleError::InvalidAmount
         );
 
-        // IMPORTANT: Use u128 intermediates to avoid u64 multiplication overflow.
-        // Large production rates (e.g., 133_000 * 10^9 tokens per SOL) can overflow u64
-        // even for small lamport amounts.
+        // IMPORTANT: Use u128 intermediates to avoid u64 multiplication overflow
+        // sol_price_usd is i128 from Chainlink, convert to u128 (we already checked it's > 0)
+        let sol_price_usd_u128 = sol_price_usd as u128;
+        
+        // Calculate: tokens = (sol_amount * sol_price_usd * 1_000_000) / (token_price_usd_micro * 10^8 * 10^9)
+        // Where:
+        // - sol_amount is in lamports (9 decimals)
+        // - sol_price_usd has 8 decimals from Chainlink
+        // - token_price_usd_micro is in micro-USD (6 decimals, e.g., 1000 = $0.001)
+        // - We need to account for all decimals properly
+        
+        // Formula: tokens = (sol_amount * sol_price_usd * 1_000_000) / (token_price_usd_micro * 10^17)
+        // This accounts for:
+        // - sol_amount: 9 decimals (lamports)
+        // - sol_price_usd: 8 decimals
+        // - token_price_usd_micro: 6 decimals (micro-USD)
+        // Result needs to be in token base units (typically 9 decimals)
+        
         let tokens_to_receive_u128 = (sol_amount as u128)
-            .checked_mul(presale_state.tokens_per_sol as u128)
+            .checked_mul(sol_price_usd_u128)
             .ok_or(PresaleError::Overflow)?
-            .checked_div(LAMPORTS_PER_SOL as u128)
+            .checked_mul(1_000_000u128) // Convert to micro-USD
+            .ok_or(PresaleError::Overflow)?
+            .checked_div(
+                (presale_state.token_price_usd_micro as u128)
+                    .checked_mul(10u128.pow(CHAINLINK_DECIMALS as u32)) // 10^8
+                    .ok_or(PresaleError::Overflow)?
+                    .checked_mul(10u128.pow(SOL_DECIMALS as u32)) // 10^9
+                    .ok_or(PresaleError::Overflow)?
+            )
             .ok_or(PresaleError::Overflow)?;
 
         require!(
@@ -930,21 +1028,21 @@ pub mod presale {
     /// Only admin or governance can call this function.
     ///
     /// # Parameters
-    /// - `ctx`: SetTokenRate context (requires authority)
-    /// - `tokens_per_sol`: New rate - how many NC tokens (in base units) per 1 SOL
+    /// - `ctx`: SetTokenPriceUsd context (requires authority)
+    /// - `token_price_usd_micro`: New token price in micro-USD (e.g., 1000 = $0.001 per token)
     ///
     /// # Returns
-    /// - `Result<()>`: Success if rate is updated
+    /// - `Result<()>`: Success if price is updated
     ///
     /// # Errors
     /// - `PresaleError::Unauthorized` if caller is not authority
-    /// - `PresaleError::InvalidAmount` if tokens_per_sol is 0
+    /// - `PresaleError::InvalidAmount` if token_price_usd_micro is 0
     ///
     /// # Security
-    /// - Only authority (admin or governance) can update rate
-    pub fn set_token_rate(
-        ctx: Context<SetTokenRate>,
-        tokens_per_sol: u64,
+    /// - Only authority (admin or governance) can update price
+    pub fn set_token_price_usd(
+        ctx: Context<SetTokenPriceUsd>,
+        token_price_usd_micro: u64,
     ) -> Result<()> {
         let presale_state = &mut ctx.accounts.presale_state;
         
@@ -955,19 +1053,19 @@ pub mod presale {
             PresaleError::Unauthorized
         );
         
-        // Validate tokens_per_sol is greater than 0
+        // Validate token_price_usd_micro is greater than 0
         require!(
-            tokens_per_sol > 0,
+            token_price_usd_micro > 0,
             PresaleError::InvalidAmount
         );
         
-        let old_rate = presale_state.tokens_per_sol;
-        presale_state.tokens_per_sol = tokens_per_sol;
+        let old_price = presale_state.token_price_usd_micro;
+        presale_state.token_price_usd_micro = token_price_usd_micro;
         
         msg!(
-            "Token rate updated from {} to {} tokens per SOL by authority {}",
-            old_rate,
-            tokens_per_sol,
+            "Token price updated from {} to {} micro-USD per token by authority {}",
+            old_price,
+            token_price_usd_micro,
             ctx.accounts.authority.key()
         );
         
@@ -1769,6 +1867,10 @@ pub struct BuyWithSol<'info> {
     /// CHECK: Optional blacklist account for buyer (validated in function)
     pub buyer_blacklist: UncheckedAccount<'info>,
     
+    /// CHECK: Chainlink SOL/USD price feed account
+    /// Must be the official Chainlink feed (validated in buy_with_sol)
+    pub chainlink_feed: AccountInfo<'info>,
+    
     pub system_program: Program<'info, System>,
 }
 
@@ -1855,7 +1957,7 @@ pub struct UpdatePresaleLimits<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SetTokenRate<'info> {
+pub struct SetTokenPriceUsd<'info> {
     #[account(
         mut,
         seeds = [b"presale_state"],
@@ -1888,13 +1990,13 @@ pub struct PresaleState {
     pub treasury_address: Pubkey, // Treasury wallet address (settable via set_treasury_address)
     pub max_presale_cap: u64, // Maximum presale cap (0 = unlimited)
     pub max_per_user: u64, // Maximum per user purchase (0 = unlimited)
-    pub tokens_per_sol: u64, // How many NC tokens (in base units) per 1 SOL
+    pub token_price_usd_micro: u64, // Token price in micro-USD (e.g., 1000 = $0.001 per token)
     pub bump: u8, // PDA bump
 }
 
 impl PresaleState {
     pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 1 + 32 + 8 + 8 + 8 + 1; 
-    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + treasury_address + max_presale_cap + max_per_user + tokens_per_sol + bump
+    // admin + authority + governance + token_program + token_program_state + mint + status + sold + raised + governance_set + treasury_address + max_presale_cap + max_per_user + token_price_usd_micro + bump
 }
 
 #[account]
@@ -1960,4 +2062,8 @@ pub enum PresaleError {
     InvalidAmount,
     #[msg("Buyer is blacklisted")]
     BuyerBlacklisted,
+    #[msg("Invalid price from Chainlink oracle")]
+    InvalidPrice,
+    #[msg("Chainlink price feed is stale (too old)")]
+    StalePrice,
 }

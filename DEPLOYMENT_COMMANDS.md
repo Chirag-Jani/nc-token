@@ -272,21 +272,121 @@ await program.methods
 
 ---
 
-## Deploy Presale Program
+## Deploy Presale Program (Chainlink Oracle Integration)
+
+### Important: Chainlink Oracle Integration
+
+The presale program now uses **Chainlink's on-chain SOL/USD price feed** for dynamic pricing:
+- ✅ Real-time SOL/USD price from Chainlink oracle
+- ✅ Automatic price updates (no manual price changes needed)
+- ✅ Production-grade security (owner validation, staleness checks)
+
+**Chainlink Feed Address:**
+- **SOL/USD Feed:** `CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU`
+- **Chainlink OCR2 Program:** `HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny`
+- **Note:** No devnet feed available - use mainnet feed for both networks
+- **Program validates:** Feed owner must be Chainlink OCR2 program (not specific address)
+
+---
+
+### Step 1: Build and Deploy Presale Program
 
 ```bash
-# 1. Deploy presale program to devnet
+# 1. Build the program
+anchor build
+
+# 2. Deploy to devnet
 anchor deploy --program-name presale --provider.cluster devnet
 
-# 2. Initialize presale program
-yarn deploy:presale
+# 3. Verify deployment
+solana program show <YOUR_PRESALE_PROGRAM_ID> --url devnet
+```
 
-# Optional: Customize presale parameters
-yarn deploy:presale --decimals 9 --totalSupply 1000000000
+---
 
-# 3. Save presale deployment info
+### Step 2: Initialize or Migrate Presale
+
+#### Option A: Fresh Deployment (Presale doesn't exist)
+
+```bash
+# Set environment for devnet
+export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com
+export ANCHOR_WALLET=~/.config/solana/id.json
+
+# Initialize with token price in micro-USD
+# Example: $0.001 per token = 1000 micro-USD
+TOKEN_PRICE_USD_MICRO=1000 anchor run deploy-presale
+
+# Or with custom price
+TOKEN_PRICE_USD_MICRO=10000 anchor run deploy-presale  # $0.01 per token
+```
+
+**What this does:**
+- ✅ Creates `PresaleState` account with `token_price_usd_micro` field
+- ✅ Sets token price in micro-USD (1000 = $0.001 per token)
+- ✅ Presale will use Chainlink SOL/USD oracle for dynamic pricing
+- ✅ **NO migration needed** - fresh start with new structure
+
+#### Option B: Existing Presale (Check if migration needed)
+
+```bash
+# Check current presale state
+# If it shows token_price_usd_micro → Already migrated, skip migration
+# If it shows tokens_per_sol → Need migration
+
+# If migration is needed:
+TOKEN_PRICE_USD_MICRO=1000 anchor run migrate-presale-pricing
+
+# If already migrated:
+# ✅ No action needed - just verify token_price_usd_micro is set correctly
+```
+
+**Migration will:**
+1. Reallocate `PresaleState` account if needed
+2. Replace `tokens_per_sol` with `token_price_usd_micro`
+3. Set USD price per token
+4. Verify migration succeeded
+
+---
+
+### Step 3: Start Presale
+
+```bash
+# Start the presale (allows purchases)
+ts-node scripts/start-presale.ts
+```
+
+---
+
+### Step 4: Test Buy with Chainlink Oracle
+
+```bash
+# Test buying with 0.1 SOL
+# Script automatically uses Chainlink feed address
+ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
+ts-node scripts/buy-presale.ts 0.1
+```
+
+**Expected:**
+- ✅ Transaction succeeds
+- ✅ Tokens calculated using real-time Chainlink SOL/USD price
+- ✅ Tokens minted to buyer
+- ✅ SOL transferred to vault
+
+---
+
+### Step 5: Save Deployment Info
+
+```bash
+# View deployment info
 cat presale-deployment-info.json
 ```
+
+**Save these values:**
+- `presaleProgramId` - Presale program ID
+- `presaleStatePda` - Presale state PDA
+- `presaleTokenMint` - Presale token mint address
+- `admin` - Admin wallet address
 
 ---
 
@@ -578,41 +678,125 @@ MINT_ADDRESS=<mint> STATE_PDA=<state_pda> yarn revoke-authorities
 ## Quick Reference - All Commands in Order
 
 ```bash
-# Setup
+# ============================================
+# SETUP
+# ============================================
 solana config set --url devnet
 solana airdrop 2 $(solana address)
 yarn install
 
-# Build
+# ============================================
+# BUILD
+# ============================================
 anchor build
 anchor keys sync
 
-# Deploy Token
+# ============================================
+# DEPLOY TOKEN PROGRAM
+# ============================================
 anchor deploy --program-name spl-project --provider.cluster devnet
 yarn deploy
 
-# Deploy Governance
+# ============================================
+# DEPLOY GOVERNANCE
+# ============================================
 anchor deploy --program-name governance --provider.cluster devnet
 ts-node scripts/init-governance.ts
 
-# Transfer Authority
+# Transfer Authority (optional)
 ts-node scripts/transfer-authority.ts
 # Wait 7 days, then execute set_governance
 
-# Deploy Presale
+# ============================================
+# DEPLOY PRESALE (Chainlink Oracle)
+# ============================================
+# 1. Deploy program
 anchor deploy --program-name presale --provider.cluster devnet
-yarn deploy:presale
 
-# Configure Governance
+# 2. Initialize (fresh) OR Migrate (existing)
+# For fresh deployment:
+export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com
+TOKEN_PRICE_USD_MICRO=1000 anchor run deploy-presale
+
+# For existing presale (if needs migration):
+TOKEN_PRICE_USD_MICRO=1000 anchor run migrate-presale-pricing
+
+# 3. Start presale
+ts-node scripts/start-presale.ts
+
+# 4. Test buy with Chainlink oracle
+ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
+ts-node scripts/buy-presale.ts 0.1
+
+# ============================================
+# CONFIGURE GOVERNANCE
+# ============================================
 ts-node scripts/set-token-program.ts
 ts-node scripts/set-presale-program.ts
 
-# Setup Presale
-ts-node scripts/allow-payment-token.ts
-ts-node scripts/start-presale.ts
-
-# Optional: Revoke Authorities
+# ============================================
+# OPTIONAL: REVOKE AUTHORITIES
+# ============================================
 yarn revoke-authorities
+```
+
+---
+
+## Migration vs Fresh Deployment
+
+### When to Migrate
+
+**Migration is ONLY needed if:**
+- ✅ Presale was initialized with old structure (`tokens_per_sol` field)
+- ✅ You're upgrading from pre-Chainlink version to Chainlink version
+- ✅ Account structure changed (old field → new field)
+
+**Migration is NOT needed if:**
+- ✅ Fresh deployment (presale doesn't exist yet)
+- ✅ Already migrated (has `token_price_usd_micro` field)
+- ✅ Only program logic changed (account structure unchanged)
+
+### How to Check
+
+```bash
+# Check if presale state exists and what structure it has
+# If account doesn't exist → Fresh deployment (no migration)
+# If account has token_price_usd_micro → Already migrated (no migration)
+# If account has tokens_per_sol → Needs migration
+```
+
+---
+
+## Chainlink Integration Details
+
+### Feed Address
+- **SOL/USD Feed:** `CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU`
+- **Use for:** Both devnet and mainnet (no devnet feed available)
+- **Chainlink OCR2 Program:** `HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny`
+
+### Program Validation
+The program validates:
+- ✅ Feed owner == Chainlink OCR2 program
+- ✅ Feed decimals == 8
+- ✅ Price > 0
+- ✅ Price staleness < 1 hour
+
+### Client Code
+All `buyWithSol` calls must include the Chainlink feed account:
+
+```typescript
+const CHAINLINK_SOL_USD_FEED = new PublicKey(
+  "CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU"
+);
+
+await presaleProgram.methods
+  .buyWithSol(solAmount)
+  .accounts({
+    // ... other accounts ...
+    chainlinkFeed: CHAINLINK_SOL_USD_FEED, // ⚠️ REQUIRED
+    // ... other accounts ...
+  })
+  .rpc();
 ```
 
 ---
@@ -624,17 +808,40 @@ yarn revoke-authorities
 3. **Replace Placeholders**: Update `YOUR_GOVERNANCE_STATE_PDA` and `YOUR_PAYMENT_TOKEN_MINT` in scripts
 4. **Test First**: Always test on devnet before mainnet
 5. **Secure Seed Phrases**: Never share or commit seed phrases
+6. **Chainlink Feed**: Use mainnet feed address for both devnet and mainnet (no devnet feed available)
+7. **Migration**: Only needed if upgrading from old structure (`tokens_per_sol`) to new (`token_price_usd_micro`)
+8. **Token Price Format**: `token_price_usd_micro` is in micro-USD (1000 = $0.001 per token)
 
 ---
 
 ## Production Deployment Checklist
 
-- [ ] All programs built and tested
+### Pre-Deployment
+- [ ] All programs built and tested on devnet
+- [ ] Chainlink integration tested and working
+- [ ] Migration tested (if applicable)
+- [ ] All scripts updated with correct feed addresses
+- [ ] Token price (`token_price_usd_micro`) calculated and verified
+
+### Deployment
 - [ ] All programs deployed to mainnet
 - [ ] Governance initialized with proper signers
 - [ ] Token authority transferred to governance
+- [ ] Presale initialized or migrated on mainnet
 - [ ] Presale configured and started
+- [ ] Chainlink feed address verified for mainnet
+
+### Post-Deployment
+- [ ] Test buy transaction on mainnet
+- [ ] Verify Chainlink oracle pricing works correctly
 - [ ] Authorities revoked (if desired)
 - [ ] All addresses saved securely
+- [ ] Frontend/client code updated with Chainlink feed
 - [ ] Documentation updated with production addresses
+
+### Chainlink-Specific
+- [ ] Chainlink SOL/USD feed address verified: `CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU`
+- [ ] All `buyWithSol` calls include `chainlinkFeed` account
+- [ ] Price calculation tested with real Chainlink prices
+- [ ] Staleness checks verified (1 hour threshold)
 

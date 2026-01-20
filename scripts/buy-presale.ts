@@ -117,9 +117,22 @@ async function main() {
     program.programId
   );
 
+  // Chainlink SOL/USD feed addresses
+  // Note: The Chainlink OCR2 program ID is the same on both devnet and mainnet
+  // Since our program only validates the feed owner (Chainlink OCR2), we can use
+  // the mainnet feed address for both networks. The program will accept any feed
+  // owned by the Chainlink OCR2 program.
+  const CHAINLINK_SOL_USD_FEED = new PublicKey("CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
+  
+  // Use the same feed for both devnet and mainnet
+  // The program validates owner == Chainlink OCR2 program, not the specific address
+  const chainlinkFeed = CHAINLINK_SOL_USD_FEED;
+  const isMainnet = connection.rpcEndpoint.includes("mainnet");
+
   console.log("🛒 Buying presale tokens...");
   console.log("   SOL Amount:", solAmount, "SOL");
   console.log("   Buyer:", walletKeypair.publicKey.toString());
+  console.log("   Chainlink Feed:", chainlinkFeed.toString(), isMainnet ? "(Mainnet)" : "(Devnet)");
 
   try {
     const tx = await program.methods
@@ -133,6 +146,7 @@ async function main() {
         presaleTokenVault: presaleTokenVault,
         presaleTokenVaultPda: presaleTokenVaultPda,
         buyerTokenAccount: buyerTokenAccount,
+        chainlinkFeed: chainlinkFeed, // Add Chainlink feed account
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         userPurchase: userPurchasePda,

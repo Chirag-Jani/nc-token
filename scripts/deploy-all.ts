@@ -361,14 +361,17 @@ async function main() {
 
   console.log("\n8️⃣ Initializing presale...");
   try {
-    // Default: 133,000 NC tokens per SOL (if NC = $0.001 and SOL = $133)
-    // Stored as: 133_000 * 10^9 = 133_000_000_000_000 (with 9 decimals)
-    const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000);
-    const tokensPerSol = process.env.TOKENS_PER_SOL 
-      ? new anchor.BN(process.env.TOKENS_PER_SOL) 
-      : DEFAULT_TOKENS_PER_SOL;
+    // Default: $0.001 per token (1000 micro-USD)
+    // 1 USD = 1,000,000 micro-USD
+    // $0.001 = 1,000 micro-USD
+    const DEFAULT_TOKEN_PRICE_USD_MICRO = new anchor.BN(1000);
+    const tokenPriceUsdMicro = process.env.TOKEN_PRICE_USD_MICRO 
+      ? new anchor.BN(process.env.TOKEN_PRICE_USD_MICRO) 
+      : DEFAULT_TOKEN_PRICE_USD_MICRO;
     
-    console.log("   Setting tokens_per_sol to:", tokensPerSol.toString());
+    console.log("   Setting token_price_usd_micro to:", tokenPriceUsdMicro.toString(), "micro-USD");
+    console.log("   Token price:", (tokenPriceUsdMicro.toNumber() / 1_000_000).toFixed(6), "USD per token");
+    console.log("   💡 Presale will use Chainlink SOL/USD oracle for dynamic pricing");
     
     const presaleTx = await presaleProgram.methods
       .initialize(
@@ -376,7 +379,7 @@ async function main() {
         mintKeypair.publicKey, // presale_token_mint
         tokenProgram.programId, // token_program
         tokenStatePda, // token_program_state
-        tokensPerSol // initial_tokens_per_sol
+        tokenPriceUsdMicro // token_price_usd_micro
       )
       .accountsPartial({
         presaleState: presaleStatePda,

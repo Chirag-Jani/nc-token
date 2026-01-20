@@ -24,6 +24,16 @@ import { Governance } from "../target/types/governance";
 import { Presale } from "../target/types/presale";
 import { SplProject } from "../target/types/spl_project";
 
+// Chainlink SOL/USD feed address
+// Note: There is no devnet feed available, so we use the mainnet feed for both networks
+// The program validates feed owner (Chainlink OCR2 program), not the specific address
+const CHAINLINK_SOL_USD_FEED = new PublicKey("CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
+
+// Helper to get Chainlink feed (same for all networks)
+function getChainlinkFeed(): PublicKey {
+  return CHAINLINK_SOL_USD_FEED;
+}
+
 // --- HELPER FOR DETERMINISTIC KEYS ---
 // This ensures that keypairs match presale.ts and spl-project.ts
 function getFixedKeypair(seedString: string): Keypair {
@@ -369,13 +379,13 @@ async function warpTime(seconds: number) {
     try {
       const existingState = await presaleProgram.account.presaleState.fetch(presaleStatePda);
       console.log("ℹ Presale already initialized by previous test file");
-      // If tokens_per_sol is not set (0), migrate it
-      if (!existingState.tokensPerSol || existingState.tokensPerSol.eq(new anchor.BN(0))) {
-        console.log("   Migrating presale state to include tokens_per_sol...");
-        const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000); // 133,000 NC tokens per SOL
+      // If token_price_usd_micro is not set (0), migrate it
+      if (!existingState.tokenPriceUsdMicro || existingState.tokenPriceUsdMicro.eq(new anchor.BN(0))) {
+        console.log("   Migrating presale state to use Chainlink oracle pricing...");
+        const DEFAULT_TOKEN_PRICE_USD_MICRO = new anchor.BN(1000); // $0.001 per token
         try {
           await presaleProgram.methods
-            .migratePresaleState(DEFAULT_TOKENS_PER_SOL)
+            .migratePresaleState(DEFAULT_TOKEN_PRICE_USD_MICRO)
             .accounts({
               presaleState: presaleStatePda,
               authority: admin.publicKey,
@@ -393,9 +403,9 @@ async function warpTime(seconds: number) {
     } catch {
       // Presale not initialized - initialize it
     try {
-      const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000); // 133,000 NC tokens per SOL
+      const DEFAULT_TOKEN_PRICE_USD_MICRO = new anchor.BN(1000); // $0.001 per token (1000 micro-USD)
       await presaleProgram.methods
-        .initialize(admin.publicKey, mint.publicKey, tokenProgram.programId, tokenStatePda, DEFAULT_TOKENS_PER_SOL)
+        .initialize(admin.publicKey, mint.publicKey, tokenProgram.programId, tokenStatePda, DEFAULT_TOKEN_PRICE_USD_MICRO)
         .accounts({
           presaleState: presaleStatePda,
           payer: admin.publicKey,

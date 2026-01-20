@@ -6,22 +6,34 @@ import * as path from "path";
 import * as fs from "fs";
 
 /**
- * Migration Script: Add Pricing to Presale Contract
+ * Migration Script: Migrate Presale to Chainlink Oracle Pricing
  * 
- * This script migrates an existing presale contract to include the tokens_per_sol field.
+ * This script migrates an existing presale contract from tokens_per_sol to token_price_usd_micro.
  * It calls the migrate_presale_state function to:
- * 1. Reallocate the PresaleState account to include the new field
- * 2. Set the initial tokens_per_sol rate
+ * 1. Replace tokens_per_sol field with token_price_usd_micro
+ * 2. Set the initial token price in micro-USD
  * 
  * Usage:
+ *   # For devnet (default):
  *   anchor run migrate-presale-pricing
+ *   
+ *   # Or explicitly set devnet:
+ *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com anchor run migrate-presale-pricing
  * 
- * Or with custom values:
- *   TOKENS_PER_SOL=133000000000000 anchor run migrate-presale-pricing
+ *   # With custom token price:
+ *   TOKEN_PRICE_USD_MICRO=1000 anchor run migrate-presale-pricing
+ * 
+ *   # For mainnet:
+ *   ANCHOR_PROVIDER_URL=https://api.mainnet-beta.solana.com TOKEN_PRICE_USD_MICRO=1000 anchor run migrate-presale-pricing
+ * 
+ * Example: If token price is $0.001, use TOKEN_PRICE_USD_MICRO=1000 (1000 micro-USD = $0.001)
+ * 
+ * Note: This script defaults to devnet even if Anchor.toml is set to localnet.
+ *       Set ANCHOR_PROVIDER_URL environment variable to override.
  */
 
 async function main() {
-  console.log("🔄 Starting Presale Pricing Migration...\n");
+  console.log("🔄 Starting Presale Oracle Pricing Migration...\n");
   console.log("=".repeat(70));
 
   // Load wallet
@@ -37,11 +49,21 @@ async function main() {
     Buffer.from(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
   );
 
-  // Setup connection
-  const connection = new anchor.web3.Connection(
-    process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com",
-    "confirmed"
-  );
+  // Setup connection for migration
+  //
+  // IMPORTANT:
+  // - We IGNORE Anchor's localnet config here on purpose.
+  // - By default, this script talks to DEVNET so you can migrate an
+  //   already-deployed devnet program even if Anchor.toml has cluster = "localnet".
+  // - To override, set MIGRATION_RPC_URL explicitly.
+  //
+  // Examples:
+  //   MIGRATION_RPC_URL=https://api.devnet.solana.com anchor run migrate-presale-pricing
+  //   MIGRATION_RPC_URL=https://api.mainnet-beta.solana.com anchor run migrate-presale-pricing
+  const rpcUrl =
+    process.env.MIGRATION_RPC_URL || "https://api.devnet.solana.com";
+
+  const connection = new anchor.web3.Connection(rpcUrl, "confirmed");
 
   const provider = new anchor.AnchorProvider(
     connection,
@@ -78,6 +100,28 @@ async function main() {
   }
   console.log("");
 
+  // Check if account exists first
+  console.log("📊 Checking presale state account...");
+  const accountInfo = await connection.getAccountInfo(presaleStatePda);
+  
+  if (!accountInfo) {
+    console.error("   ❌ Presale state account not found!");
+    console.error("");
+    console.error("   The presale has not been initialized yet.");
+    console.error("   Please initialize the presale first:");
+    console.error("   - Run: anchor run deploy-presale");
+    console.error("   - Or: yarn deploy:presale");
+    console.error("");
+    console.error("   Account address:", presaleStatePda.toString());
+    console.error("   Program ID:", presaleProgram.programId.toString());
+    throw new Error("Presale state account does not exist. Please initialize the presale first.");
+  }
+  
+  console.log("   ✅ Account exists");
+  console.log("   Account size:", accountInfo.data.length, "bytes");
+  console.log("   Owner:", accountInfo.owner.toString());
+  console.log("");
+  
   // Fetch current state
   console.log("📊 Fetching current presale state...");
   let currentState: any = null;
@@ -87,42 +131,48 @@ async function main() {
   try {
     // Try to fetch with new structure
     currentState = await presaleProgram.account.presaleState.fetch(presaleStatePda);
-    console.log("   ✅ Presale state found (new structure)");
+    console.log("   ✅ Presale state found");
     console.log("   Admin:", currentState.admin.toString());
     console.log("   Authority:", currentState.authority.toString());
     console.log("   Status:", Object.keys(currentState.status)[0]);
-    console.log("   Current tokens_per_sol:", currentState.tokensPerSol?.toString() || "0 (not set)");
+    
+    // Check for old tokens_per_sol or new token_price_usd_micro
+    if (currentState.tokensPerSol !== undefined) {
+      console.log("   Current tokens_per_sol (old):", currentState.tokensPerSol?.toString() || "0 (not set)");
+    }
+    if (currentState.tokenPriceUsdMicro !== undefined) {
+      console.log("   Current token_price_usd_micro:", currentState.tokenPriceUsdMicro?.toString() || "0 (not set)");
+    }
     authority = currentState.authority;
   } catch (err: any) {
     // If deserialization fails, it's likely the old structure
-    if (err.message?.includes("offset") || err.message?.includes("out of range")) {
+    if (err.message?.includes("offset") || err.message?.includes("out of range") || err.message?.includes("Invalid account discriminator")) {
       console.log("   ℹ️  Detected old account structure (needs migration)");
       isOldStructure = true;
       
-      // Fetch raw account data to get authority
-      const accountInfo = await connection.getAccountInfo(presaleStatePda);
-      if (!accountInfo) {
-        throw new Error("Presale state account not found");
-      }
-      
       // Parse authority from raw data (offset: 8 discriminator + 32 admin = 40, then 32 bytes for authority)
-      // Old structure: admin(32) + authority(32) + ... 
-      // Actually, let's check: discriminator(8) + admin(32) + authority(32) = offset 72
       const authorityBytes = accountInfo.data.slice(40, 72);
       authority = new PublicKey(authorityBytes);
       
       console.log("   Authority (from raw data):", authority.toString());
       console.log("   Account size:", accountInfo.data.length, "bytes (old structure)");
     } else {
+      console.error("   ❌ Failed to deserialize presale state");
+      console.error("   Error:", err.message);
+      console.error("");
+      console.error("   This might indicate:");
+      console.error("   - Account data is corrupted");
+      console.error("   - Account structure doesn't match program");
+      console.error("   - Program ID mismatch");
       throw new Error(`Failed to fetch presale state: ${err.message}`);
     }
   }
   console.log("");
 
   // Check if already migrated
-  if (currentState && currentState.tokensPerSol && currentState.tokensPerSol.gt(new anchor.BN(0))) {
-    console.log("⚠️  WARNING: tokens_per_sol is already set!");
-    console.log("   Current value:", currentState.tokensPerSol.toString());
+  if (currentState && currentState.tokenPriceUsdMicro && currentState.tokenPriceUsdMicro.gt(new anchor.BN(0))) {
+    console.log("⚠️  WARNING: token_price_usd_micro is already set!");
+    console.log("   Current value:", currentState.tokenPriceUsdMicro.toString());
     console.log("   This script will UPDATE the existing value.");
     console.log("   (Set SKIP_WARNING=true to skip this message)");
     console.log("");
@@ -132,25 +182,25 @@ async function main() {
       await new Promise(resolve => setTimeout(resolve, 3000));
       console.log("");
     }
-  } else if (isOldStructure) {
-    console.log("ℹ️  Account needs migration to new structure");
+  } else if (isOldStructure || (currentState && currentState.tokensPerSol)) {
+    console.log("ℹ️  Account needs migration to oracle-based pricing");
     console.log("");
   }
 
-  // Get tokens_per_sol from environment or calculate from example
-  // Example: NC = $0.001, SOL = $133
-  // tokens_per_sol = $133 / $0.001 = 133,000 NC tokens per SOL
-  // Stored as: 133_000 * 10^9 = 133_000_000_000_000 (if NC has 9 decimals)
-  const DEFAULT_TOKENS_PER_SOL = new anchor.BN(133_000_000_000_000); // 133,000 NC tokens per SOL (with 9 decimals)
+  // Get token_price_usd_micro from environment or use default
+  // Example: If token price is $0.001, use 1000 micro-USD
+  // 1 USD = 1,000,000 micro-USD
+  // $0.001 = 1,000 micro-USD
+  const DEFAULT_TOKEN_PRICE_USD_MICRO = new anchor.BN(1000); // $0.001 per token
   
-  let tokensPerSol: anchor.BN;
-  if (process.env.TOKENS_PER_SOL) {
-    tokensPerSol = new anchor.BN(process.env.TOKENS_PER_SOL);
-    console.log("📝 Using TOKENS_PER_SOL from environment:", tokensPerSol.toString());
+  let tokenPriceUsdMicro: anchor.BN;
+  if (process.env.TOKEN_PRICE_USD_MICRO) {
+    tokenPriceUsdMicro = new anchor.BN(process.env.TOKEN_PRICE_USD_MICRO);
+    console.log("📝 Using TOKEN_PRICE_USD_MICRO from environment:", tokenPriceUsdMicro.toString());
   } else {
-    tokensPerSol = DEFAULT_TOKENS_PER_SOL;
-    console.log("📝 Using default TOKENS_PER_SOL:", tokensPerSol.toString());
-    console.log("   (Set TOKENS_PER_SOL environment variable to override)");
+    tokenPriceUsdMicro = DEFAULT_TOKEN_PRICE_USD_MICRO;
+    console.log("📝 Using default TOKEN_PRICE_USD_MICRO:", tokenPriceUsdMicro.toString(), "($0.001 per token)");
+    console.log("   (Set TOKEN_PRICE_USD_MICRO environment variable to override)");
   }
   console.log("");
 
@@ -163,16 +213,13 @@ async function main() {
   if (!isOldStructure && currentState) {
     isGovernance = currentState.governanceSet && currentState.governance.equals(walletAuthority);
   } else if (isOldStructure) {
-    // Try to get governance from raw data (offset after authority + governance + token_program + token_program_state + mint + status)
-    // This is complex, so we'll just check if authority matches
-    // If governance is set, it would be at a specific offset, but for simplicity, we'll rely on authority check
     console.log("   ℹ️  Governance check skipped for old structure (will use authority check)");
   }
   
   if (!isAdmin && !isGovernance) {
     throw new Error(
-      `Current wallet (${authority.toString()}) is not authorized.\n` +
-      `Required: Admin (${currentState.authority.toString()}) or Governance (${currentState.governance.toString()})`
+      `Current wallet (${walletAuthority.toString()}) is not authorized.\n` +
+      `Required: Admin (${authority.toString()}) or Governance`
     );
   }
 
@@ -194,13 +241,14 @@ async function main() {
   // Perform migration
   console.log("🚀 Executing migration...");
   console.log("   This will:");
-  console.log("   1. Reallocate PresaleState account to include tokens_per_sol field");
-  console.log("   2. Set tokens_per_sol to:", tokensPerSol.toString());
+  console.log("   1. Replace tokens_per_sol with token_price_usd_micro field");
+  console.log("   2. Set token_price_usd_micro to:", tokenPriceUsdMicro.toString(), "micro-USD");
+  console.log("   3. Presale will now use Chainlink SOL/USD oracle for pricing");
   console.log("");
 
   try {
     const migrateTx = await presaleProgram.methods
-      .migratePresaleState(tokensPerSol)
+      .migratePresaleState(tokenPriceUsdMicro)
       .accountsPartial({
         presaleState: presaleStatePda,
         authority: walletAuthority,
@@ -215,25 +263,28 @@ async function main() {
     console.log("🔍 Verifying migration...");
     const updatedState = await presaleProgram.account.presaleState.fetch(presaleStatePda);
     console.log("   ✅ Migration successful!");
-    console.log("   New tokens_per_sol:", updatedState.tokensPerSol.toString());
+    console.log("   New token_price_usd_micro:", updatedState.tokenPriceUsdMicro.toString());
     console.log("");
 
-    // Calculate example
-    const LAMPORTS_PER_SOL = new anchor.BN(1_000_000_000);
-    const exampleSolAmount = new anchor.BN(1_000_000_000); // 1 SOL
-    const exampleTokens = exampleSolAmount
-      .mul(updatedState.tokensPerSol)
-      .div(LAMPORTS_PER_SOL);
-    
-    console.log("📊 Example Calculation:");
-    console.log("   For 1 SOL (1,000,000,000 lamports):");
-    console.log("   Tokens = (1,000,000,000 ×", updatedState.tokensPerSol.toString(), ") / 1,000,000,000");
-    console.log("   Tokens =", exampleTokens.toString(), "base units");
+    // Calculate example with Chainlink price
+    console.log("📊 Example Calculation (using Chainlink oracle):");
+    console.log("   Token price:", (tokenPriceUsdMicro.toNumber() / 1_000_000).toFixed(6), "USD per token");
+    console.log("   For 1 SOL purchase:");
+    console.log("   - Program will fetch SOL/USD price from Chainlink");
+    console.log("   - Calculate tokens = (SOL_amount * SOL_price_USD) / token_price_usd");
+    console.log("   - Price updates automatically with SOL market price");
     console.log("");
 
     console.log("=".repeat(70));
     console.log("✅ Migration completed successfully!");
     console.log("=".repeat(70));
+    console.log("");
+    console.log("📌 Next Steps:");
+    console.log("   1. Update your frontend to pass Chainlink SOL/USD feed account");
+    console.log("   2. Chainlink SOL/USD feed: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
+    console.log("   3. Note: Use mainnet feed for both devnet and mainnet (no devnet feed available)");
+    console.log("   4. Program validates feed owner (Chainlink OCR2), not specific address");
+    console.log("   5. Test buy_with_sol with the Chainlink feed account");
 
   } catch (err: any) {
     console.error("❌ Migration failed:", err.message);
@@ -251,4 +302,3 @@ main()
     console.error(error);
     process.exit(1);
   });
-
