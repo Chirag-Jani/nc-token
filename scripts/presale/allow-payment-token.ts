@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../target/types/presale";
+import { Presale } from "../../target/types/presale";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";

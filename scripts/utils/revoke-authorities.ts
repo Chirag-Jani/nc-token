@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { SplProject } from "../target/types/spl_project";
+import { SplProject } from "../../target/types/spl_project";
 import {
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
@@ -21,7 +21,9 @@ import * as fs from "fs";
 import * as path from "path";
 
 // Load deployment info
-const deploymentInfoPath = path.join(__dirname, "..", "deployment-info.json");
+const deploymentInfoPath = path.join(__dirname, "../../deployments/deployment-info.json");
+// ... (skip lines)
+    const idlPath = path.join(__dirname, "../../target/idl/spl_project.json");
 let deploymentInfo: any = {};
 
 if (fs.existsSync(deploymentInfoPath)) {

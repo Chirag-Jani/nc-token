@@ -1,11 +1,22 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Governance } from "../target/types/governance";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { Governance } from "../../target/types/governance";
+import { PublicKey } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
 
 async function main() {
+  // Load deployment info
+  let deploymentInfo: any = {};
+  try {
+    deploymentInfo = JSON.parse(
+      fs.readFileSync("deployments/deployment-info.json", "utf-8")
+    );
+  } catch (error) {
+    console.error("❌ Error: deployment-info.json not found. Run 'yarn deploy' first.");
+    process.exit(1);
+  }
+
   const connection = new anchor.web3.Connection(
     process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com",
     "confirmed"
@@ -33,39 +44,27 @@ async function main() {
     program.programId
   );
 
-  // Configuration
-  const REQUIRED_APPROVALS = 2; // Minimum 2-of-N
-  const COOLDOWN_PERIOD = 1800; // 30 minutes in seconds
-  const SIGNERS = [
-    walletKeypair.publicKey, // Add more signer addresses here
-    // new PublicKey("SIGNER_2_ADDRESS"),
-    // new PublicKey("SIGNER_3_ADDRESS"),
-  ];
+  const tokenProgramId = new PublicKey(deploymentInfo.programId);
 
-  console.log("📍 Governance State PDA:", governanceStatePda.toString());
-  console.log("🚀 Initializing governance...");
-  console.log("   Required Approvals:", REQUIRED_APPROVALS);
-  console.log("   Cooldown Period:", COOLDOWN_PERIOD, "seconds");
-  console.log("   Signers:", SIGNERS.length);
+  console.log("🔗 Setting token program in governance...");
+  console.log("   Token Program ID:", tokenProgramId.toString());
+  console.log("   Governance State PDA:", governanceStatePda.toString());
 
   const tx = await program.methods
-    .initialize(REQUIRED_APPROVALS, new anchor.BN(COOLDOWN_PERIOD), SIGNERS)
+    .setTokenProgram(tokenProgramId)
     .accountsPartial({
       governanceState: governanceStatePda,
       authority: walletKeypair.publicKey,
-      systemProgram: SystemProgram.programId,
     })
     .rpc();
 
-  console.log("✅ Governance initialized:", tx);
-  console.log("📍 Governance State PDA:", governanceStatePda.toString());
+  console.log("✅ Token program set in governance:", tx);
 
+  // Verify
   const state = await program.account.governanceState.fetch(governanceStatePda);
-  console.log("\n📋 Governance State:");
-  console.log("   Authority:", state.authority.toString());
-  console.log("   Required Approvals:", state.requiredApprovals.toString());
-  console.log("   Cooldown Period:", state.cooldownPeriod.toString());
-  console.log("   Signers:", state.signers.length);
+  console.log("\n📋 Updated Governance State:");
+  console.log("   Token Program:", state.tokenProgram.toString());
+  console.log("   Token Program Set:", state.tokenProgramSet);
 }
 
 main().catch(console.error);

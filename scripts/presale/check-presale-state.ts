@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../target/types/presale";
+import { Presale } from "../../target/types/presale";
 import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddress, getAccount } from "@solana/spl-token";
 import * as path from "path";
@@ -31,10 +31,10 @@ async function main() {
   
   // Load deployment info
   const presaleInfo = JSON.parse(
-    fs.readFileSync("presale-deployment-info.json", "utf-8")
+    fs.readFileSync("deployments/presale-deployment-info.json", "utf-8")
   );
   const deploymentInfo = JSON.parse(
-    fs.readFileSync("deployment-info.json", "utf-8")
+    fs.readFileSync("deployments/deployment-info.json", "utf-8")
   );
 
   const presaleStatePda = new PublicKey(presaleInfo.presaleStatePda);

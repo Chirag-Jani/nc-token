@@ -38,7 +38,7 @@ async function main() {
   
   try {
     deploymentInfo = JSON.parse(
-      fs.readFileSync("deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/deployment-info.json", "utf-8")
     );
   } catch (error) {
     throw new Error("❌ deployment-info.json not found. Run 'yarn deploy' first.");
@@ -46,7 +46,7 @@ async function main() {
 
   try {
     presaleInfo = JSON.parse(
-      fs.readFileSync("presale-deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/presale-deployment-info.json", "utf-8")
     );
   } catch (error) {
     throw new Error("❌ presale-deployment-info.json not found. Run 'yarn deploy:presale' first.");

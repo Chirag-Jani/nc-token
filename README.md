@@ -58,6 +58,62 @@ yarn deploy --name "MyToken" --symbol "MTK" --decimals 9 --totalSupply "10000000
 
 **Note:** The max supply cap is automatically set to 100 million tokens during initialization. This prevents infinite minting and enforces a hard cap on token supply.
 
+## Available Scripts
+
+### Deployment Scripts
+
+| Command | Description |
+|---------|-------------|
+| `yarn deploy` | Main token deployment |
+| `yarn deploy:all` | Deploy all programs (token, governance, presale) |
+| `yarn deploy:presale` | Deploy presale program only |
+| `yarn deploy:governance` | Deploy governance program only |
+
+### Presale Scripts
+
+| Command | Description |
+|---------|-------------|
+| `yarn presale:start` | Start the presale |
+| `yarn presale:check` | Check current presale state |
+| `yarn presale:buy` | Execute a presale purchase |
+
+### Governance Scripts
+
+| Command | Description |
+|---------|-------------|
+| `yarn governance:init` | Initialize governance with multisig |
+| `yarn governance:transfer` | Transfer authority to governance |
+
+### Utility Scripts
+
+| Command | Description |
+|---------|-------------|
+| `yarn lint` | Check code formatting |
+| `yarn lint:fix` | Fix code formatting |
+| `yarn test:presale` | Run presale tests |
+| `yarn utils:recover-tokens` | Recover tokens from wrong vault |
+| `yarn utils:revoke-authorities` | Revoke mint/freeze authorities |
+| `yarn utils:sync-ids` | Sync program IDs to files |
+
+## Project Structure
+
+```
+nc-token/
+├── programs/           # Solana programs (Rust)
+│   ├── spl-project/    # Token program
+│   ├── governance/     # Multisig governance
+│   └── presale/        # Presale program
+├── scripts/            # TypeScript scripts
+│   ├── deploy/         # Deployment scripts
+│   ├── presale/        # Presale operations
+│   ├── governance/     # Governance operations
+│   └── utils/          # Utility scripts
+├── tests/              # Anchor tests
+├── docs/               # Documentation
+├── reports/            # Project reports
+└── deployments/        # Deployment info (JSON)
+```
+
 ## Configuration
 
 Edit `Anchor.toml`:
@@ -67,4 +123,14 @@ Edit `Anchor.toml`:
 
 ## Output
 
-`deployment-info.json` contains all deployed addresses.
+`deployments/deployment-info.json` contains all deployed addresses.
+
+## Documentation
+
+For detailed guides, see the `docs/` folder:
+
+- `SETUP.md` - Full setup instructions
+- `DEPLOYMENT_CHECKLIST.md` - Pre-deployment checklist
+- `DEPLOYMENT_COMMANDS.md` - Step-by-step deployment commands
+- `PRODUCTION_DEPLOYMENT_GUIDE.md` - Production deployment guide
+- `TREASURY_HYBRID_SETUP.md` - Treasury setup instructions

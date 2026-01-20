@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Governance } from "../target/types/governance";
+import { Governance } from "../../target/types/governance";
 import { PublicKey, SystemProgram, Keypair, clusterApiUrl, Connection } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
@@ -191,7 +191,7 @@ async function main() {
     };
 
     fs.writeFileSync(
-      "governance-deployment-info.json",
+      "deployments/governance-deployment-info.json",
       JSON.stringify(deploymentInfo, null, 2)
     );
 

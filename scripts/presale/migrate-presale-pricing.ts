@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../target/types/presale";
+import { Presale } from "../../target/types/presale";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
@@ -86,7 +86,7 @@ async function main() {
   let presaleStatePda: PublicKey;
   try {
     const presaleInfo = JSON.parse(
-      fs.readFileSync("presale-deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/presale-deployment-info.json", "utf-8")
     );
     presaleStatePda = new PublicKey(presaleInfo.presaleStatePda);
     console.log("✅ Loaded presale state PDA from deployment info:", presaleStatePda.toString());

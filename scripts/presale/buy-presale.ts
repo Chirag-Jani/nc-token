@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../target/types/presale";
+import { Presale } from "../../target/types/presale";
 import { PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
@@ -43,7 +43,7 @@ async function main() {
   
   try {
     presaleInfo = JSON.parse(
-      fs.readFileSync("presale-deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/presale-deployment-info.json", "utf-8")
     );
   } catch (error) {
     throw new Error("❌ presale-deployment-info.json not found. Run 'yarn deploy:presale' first.");
@@ -51,7 +51,7 @@ async function main() {
 
   try {
     deploymentInfo = JSON.parse(
-      fs.readFileSync("deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/deployment-info.json", "utf-8")
     );
   } catch (error) {
     throw new Error("❌ deployment-info.json not found. Run 'yarn deploy' first.");

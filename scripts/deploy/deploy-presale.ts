@@ -15,8 +15,8 @@ import {
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
-import { Presale } from "../target/types/presale";
-import { SplProject } from "../target/types/spl_project";
+import { Presale } from "../../target/types/presale";
+import { SplProject } from "../../target/types/spl_project";
 
 // Parse command-line arguments
 function parseArgs() {
@@ -132,7 +132,7 @@ async function main() {
   let mainDeploymentInfo: any;
   try {
     mainDeploymentInfo = JSON.parse(
-      fs.readFileSync("deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/deployment-info.json", "utf-8")
     );
   } catch (error) {
     throw new Error("❌ deployment-info.json not found. Deploy token program first with 'yarn deploy'");
@@ -255,7 +255,7 @@ async function main() {
   };
 
   fs.writeFileSync(
-    "presale-deployment-info.json",
+    "deployments/presale-deployment-info.json",
     JSON.stringify(deploymentInfo, null, 2)
   );
   console.log("   ✅ Deployment info saved to presale-deployment-info.json");

@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { SplProject } from "../target/types/spl_project";
+import { SplProject } from "../../target/types/spl_project";
 import { PublicKey } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
@@ -10,7 +10,7 @@ async function main() {
   let deploymentInfo: any = {};
   try {
     deploymentInfo = JSON.parse(
-      fs.readFileSync("deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/deployment-info.json", "utf-8")
     );
   } catch (error) {
     console.error("❌ Error: deployment-info.json not found. Run 'yarn deploy' first.");
@@ -21,7 +21,7 @@ async function main() {
   let governanceInfo: any = {};
   try {
     governanceInfo = JSON.parse(
-      fs.readFileSync("governance-deployment-info.json", "utf-8")
+      fs.readFileSync("deployments/governance-deployment-info.json", "utf-8")
     );
   } catch (error) {
     console.error("❌ Error: governance-deployment-info.json not found. Run 'yarn deploy:governance' first.");

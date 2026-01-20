@@ -63,7 +63,7 @@ yarn deploy
 # yarn deploy --name "NC Token" --symbol "NC" --decimals 9 --totalSupply 100000000
 
 # Verify deployment info
-cat deployment-info.json
+cat deployments/deployment-info.json
 
 # =============================================================================
 # SECTION 4: DEPLOY GOVERNANCE PROGRAM
@@ -101,7 +101,7 @@ anchor deploy --program-name presale --provider.cluster devnet
 TOKEN_PRICE_USD_MICRO=1000 anchor run deploy-presale
 
 # Verify presale deployment info
-cat presale-deployment-info.json
+cat presale-deployments/deployment-info.json
 
 # =============================================================================
 # SECTION 7: CONFIGURE GOVERNANCE (Link Programs)
@@ -177,7 +177,7 @@ ts-node scripts/start-presale.ts
 # NOTES
 # =============================================================================
 #
-# 1. Save all PDAs: Keep deployment-info.json and presale-deployment-info.json safe
+# 1. Save all PDAs: Keep deployments/deployment-info.json and presale-deployments/deployment-info.json safe
 # 2. Governance Cooldown: 7-day cooldown for authority transfer
 # 3. Chainlink Feed: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU (use for both devnet/mainnet)
 # 4. Token Price Format: token_price_usd_micro is in micro-USD (1000 = $0.001 per token)

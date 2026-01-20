@@ -29,11 +29,11 @@ print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
-# Check if deployment-info.json exists
-DEPLOYMENT_INFO="deployment-info.json"
+# Check if deployments/deployment-info.json exists
+DEPLOYMENT_INFO="deployments/deployment-info.json"
 
 if [ -f "$DEPLOYMENT_INFO" ]; then
-    print_info "Found deployment-info.json, loading configuration..."
+    print_info "Found deployments/deployment-info.json, loading configuration..."
     
     # Try to use jq if available, otherwise use grep/sed as fallback, or node
     if command -v jq &> /dev/null; then
@@ -55,7 +55,7 @@ if [ -f "$DEPLOYMENT_INFO" ]; then
         NETWORK=$(grep -o '"network"[[:space:]]*:[[:space:]]*"[^"]*"' "$DEPLOYMENT_INFO" 2>/dev/null | sed 's/.*"network"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "https://api.devnet.solana.com")
     fi
 else
-    print_warning "deployment-info.json not found, using command line arguments, environment variables, or TypeScript defaults"
+    print_warning "deployments/deployment-info.json not found, using command line arguments, environment variables, or TypeScript defaults"
 fi
 
 # Override with command line arguments if provided
@@ -80,7 +80,7 @@ NETWORK="${NETWORK:-${NETWORK_ENV:-https://api.devnet.solana.com}}"
 # Validate inputs - warn if empty but don't exit (TypeScript has defaults)
 # The TypeScript script will handle validation and use defaults if needed
 if [ -z "$MINT_ADDRESS" ] && [ -z "$STATE_PDA" ]; then
-    print_info "No addresses provided via command line or deployment-info.json"
+    print_info "No addresses provided via command line or deployments/deployment-info.json"
     print_info "TypeScript script will use hardcoded defaults from revoke-authorities.ts"
     echo ""
 fi

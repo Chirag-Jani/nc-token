@@ -21,9 +21,9 @@ import {
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
-import { SplProject } from "../target/types/spl_project";
-import { Governance } from "../target/types/governance";
-import { Presale } from "../target/types/presale";
+import { SplProject } from "../../target/types/spl_project";
+import { Governance } from "../../target/types/governance";
+import { Presale } from "../../target/types/presale";
 
 // Metaplex Token Metadata Program ID
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
@@ -426,13 +426,13 @@ async function main() {
   console.log("=".repeat(60));
 
   fs.writeFileSync(
-    "deployment-info.json",
+    "deployments/deployment-info.json",
     JSON.stringify(deploymentInfo, null, 2)
   );
 
   // Also save separate files for backward compatibility
   fs.writeFileSync(
-    "governance-deployment-info.json",
+    "deployments/governance-deployment-info.json",
     JSON.stringify({
       programId: governanceProgram.programId.toString(),
       governanceStatePda: governanceStatePda.toString(),
@@ -446,7 +446,7 @@ async function main() {
   );
 
   fs.writeFileSync(
-    "presale-deployment-info.json",
+    "deployments/presale-deployment-info.json",
     JSON.stringify({
       presaleProgramId: presaleProgram.programId.toString(),
       presaleStatePda: presaleStatePda.toString(),

@@ -22,7 +22,7 @@ import {
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
-import { SplProject } from "../target/types/spl_project";
+import { SplProject } from "../../target/types/spl_project";
 // Metaplex Token Metadata Program ID
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
@@ -474,7 +474,7 @@ async function main() {
   };
 
   fs.writeFileSync(
-    "deployment-info.json",
+    "deployments/deployment-info.json",
     JSON.stringify(deploymentInfo, null, 2)
   );
 

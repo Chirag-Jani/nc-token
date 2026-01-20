@@ -1,19 +1,19 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Governance } from "../target/types/governance";
+import { Governance } from "../../target/types/governance";
 import { PublicKey } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
 
 async function main() {
-  // Load deployment info
-  let deploymentInfo: any = {};
+  // Load presale deployment info
+  let presaleInfo: any = {};
   try {
-    deploymentInfo = JSON.parse(
-      fs.readFileSync("deployment-info.json", "utf-8")
+    presaleInfo = JSON.parse(
+      fs.readFileSync("deployments/presale-deployment-info.json", "utf-8")
     );
   } catch (error) {
-    console.error("❌ Error: deployment-info.json not found. Run 'yarn deploy' first.");
+    console.error("❌ Error: presale-deployment-info.json not found. Run 'yarn deploy:presale' first.");
     process.exit(1);
   }
 
@@ -44,27 +44,27 @@ async function main() {
     program.programId
   );
 
-  const tokenProgramId = new PublicKey(deploymentInfo.programId);
+  const presaleProgramId = new PublicKey(presaleInfo.presaleProgramId);
 
-  console.log("🔗 Setting token program in governance...");
-  console.log("   Token Program ID:", tokenProgramId.toString());
+  console.log("🔗 Setting presale program in governance...");
+  console.log("   Presale Program ID:", presaleProgramId.toString());
   console.log("   Governance State PDA:", governanceStatePda.toString());
 
   const tx = await program.methods
-    .setTokenProgram(tokenProgramId)
+    .setPresaleProgram(presaleProgramId)
     .accountsPartial({
       governanceState: governanceStatePda,
       authority: walletKeypair.publicKey,
     })
     .rpc();
 
-  console.log("✅ Token program set in governance:", tx);
+  console.log("✅ Presale program set in governance:", tx);
 
   // Verify
   const state = await program.account.governanceState.fetch(governanceStatePda);
   console.log("\n📋 Updated Governance State:");
-  console.log("   Token Program:", state.tokenProgram.toString());
-  console.log("   Token Program Set:", state.tokenProgramSet);
+  console.log("   Presale Program:", state.presaleProgram.toString());
+  console.log("   Presale Program Set:", state.presaleProgramSet);
 }
 
 main().catch(console.error);
