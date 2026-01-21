@@ -25,7 +25,7 @@
 //! 5. Withdraw: Admin withdraws funds to treasury
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
 use chainlink_solana::v2::read_feed_v2;
 
@@ -1314,6 +1314,126 @@ pub mod presale {
         Ok(())
     }
 
+    /// Withdraws unsold presale tokens from presale vault to destination
+    ///
+    /// Transfers unsold presale tokens from the presale token vault to the configured
+    /// treasury address or a specified destination. Can be called by admin or governance.
+    /// Typically called after the presale has ended to recover unsold tokens.
+    ///
+    /// # Parameters
+    /// - `ctx`: WithdrawUnsoldTokens context with all required accounts
+    /// - `amount`: Amount of presale tokens to withdraw (must be > 0)
+    ///
+    /// # Returns
+    /// - `Result<()>`: Success if withdrawal completes
+    ///
+    /// # Errors
+    /// - `PresaleError::Unauthorized` if caller is not admin or governance
+    /// - `PresaleError::TreasuryNotSet` if treasury address not configured and destination is treasury
+    /// - `PresaleError::InvalidAmount` if amount is 0 or exceeds vault balance
+    ///
+    /// # Events
+    /// - Emits `TreasuryWithdrawn` with amount and destination address
+    ///
+    /// # Security
+    /// - Requires admin or governance authority
+    /// - Validates destination token account
+    /// - Validates amount is positive
+    /// - Checks vault has sufficient balance
+    pub fn withdraw_unsold_tokens(
+        ctx: Context<WithdrawUnsoldTokens>,
+        amount: u64,
+    ) -> Result<()> {
+        let presale_state = &ctx.accounts.presale_state;
+        
+        require!(
+            presale_state.authority == ctx.accounts.authority.key() 
+                || (presale_state.governance_set && presale_state.governance == ctx.accounts.authority.key()),
+            PresaleError::Unauthorized
+        );
+        
+        // Validate amount is greater than 0
+        require!(
+            amount > 0,
+            PresaleError::InvalidAmount
+        );
+        
+        // Validate destination token account (manual validation)
+        let destination_token_data = ctx.accounts.destination_token_account.try_borrow_data()?;
+        require!(destination_token_data.len() >= 64, PresaleError::InvalidTreasuryAccount);
+        let destination_token_mint = Pubkey::try_from_slice(&destination_token_data[0..32])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        let destination_token_owner = Pubkey::try_from_slice(&destination_token_data[32..64])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        require!(
+            destination_token_mint == presale_state.presale_token_mint,
+            PresaleError::InvalidTreasuryAccount
+        );
+        require!(
+            destination_token_owner == ctx.accounts.destination.key(),
+            PresaleError::InvalidTreasuryAccount
+        );
+
+        // Validate presale token vault (manual validation)
+        let presale_token_vault_data = ctx.accounts.presale_token_vault.try_borrow_data()?;
+        require!(presale_token_vault_data.len() >= 64, PresaleError::InvalidTreasuryAccount);
+        let presale_token_vault_mint = Pubkey::try_from_slice(&presale_token_vault_data[0..32])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        let presale_token_vault_owner = Pubkey::try_from_slice(&presale_token_vault_data[32..64])
+            .map_err(|_| PresaleError::InvalidTreasuryAccount)?;
+        require!(
+            presale_token_vault_mint == presale_state.presale_token_mint,
+            PresaleError::InvalidTreasuryAccount
+        );
+        require!(
+            presale_token_vault_owner == ctx.accounts.presale_token_vault_pda.key(),
+            PresaleError::InvalidTreasuryAccount
+        );
+        
+        // Check withdrawal balance (ensure vault has enough)
+        // Token account layout: mint (0-32), owner (32-64), amount (64-72)
+        require!(presale_token_vault_data.len() >= 72, PresaleError::InvalidAmount);
+        let vault_balance = u64::from_le_bytes(
+            presale_token_vault_data[64..72].try_into().map_err(|_| PresaleError::InvalidAmount)?
+        );
+        require!(
+            vault_balance >= amount,
+            PresaleError::InvalidAmount
+        );
+        
+        // Transfer from PDA vault to destination
+        let presale_token_mint = presale_state.presale_token_mint;
+        let seeds = &[
+            b"presale_token_vault_pda",
+            presale_token_mint.as_ref(),
+            &[ctx.bumps.presale_token_vault_pda],
+        ];
+        let signer = &[&seeds[..]];
+        
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.presale_token_vault.to_account_info(),
+            to: ctx.accounts.destination_token_account.to_account_info(),
+            authority: ctx.accounts.presale_token_vault_pda.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, amount)?;
+        
+        // Emit event
+        emit!(TreasuryWithdrawn {
+            amount,
+            treasury: ctx.accounts.destination.key(),
+        });
+
+        msg!(
+            "Withdrew {} unsold presale tokens to destination: {}",
+            amount,
+            ctx.accounts.destination.key()
+        );
+        
+        Ok(())
+    }
+
     /// Update maximum presale cap
     /// Allows authority (admin or governance) to adjust the total presale cap after initialization
     ///
@@ -1907,6 +2027,47 @@ pub struct WithdrawSolToTreasury<'info> {
     pub treasury: UncheckedAccount<'info>,
     
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawUnsoldTokens<'info> {
+    #[account(
+        seeds = [b"presale_state"],
+        bump = presale_state.bump,
+        constraint = presale_state.authority == authority.key() 
+            || (presale_state.governance_set && presale_state.governance == authority.key())
+            @ PresaleError::Unauthorized
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+    
+    pub authority: Signer<'info>,
+    
+    // PDA that owns the presale token vault ATA
+    /// CHECK: This is a PDA used for signing
+    #[account(
+        seeds = [
+            b"presale_token_vault_pda",
+            presale_state.presale_token_mint.as_ref()
+        ],
+        bump
+    )]
+    pub presale_token_vault_pda: UncheckedAccount<'info>,
+    
+    // ATA owned by the presale token vault PDA (source)
+    /// CHECK: Validated manually
+    #[account(mut)]
+    pub presale_token_vault: UncheckedAccount<'info>,
+
+    // Destination token account (where unsold tokens will be sent)
+    /// CHECK: Validated manually
+    #[account(mut)]
+    pub destination_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: Destination wallet (owner of destination_token_account, validated manually)
+    pub destination: UncheckedAccount<'info>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 

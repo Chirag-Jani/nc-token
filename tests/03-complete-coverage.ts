@@ -1699,7 +1699,10 @@ async function warpTime(seconds: number) {
         .signers([signer2])
         .rpc();
 
-      await warpTime(COOLDOWN_PERIOD + 1);
+      // Get actual cooldown period from governance state
+      const currentGovState = await governanceProgram.account.governanceState.fetch(governanceStatePda);
+      const actualCooldown = currentGovState.cooldownPeriod.toNumber();
+      await warpTime(actualCooldown + 1);
 
       // Execute with presale state PDA
       // Note: WithdrawToTreasury transaction type doesn't need blacklist/restricted/pool accounts
@@ -1811,7 +1814,10 @@ async function warpTime(seconds: number) {
         .signers([signer2])
         .rpc();
 
-      await warpTime(COOLDOWN_PERIOD + 1);
+      // Get actual cooldown period from governance state
+      const currentGovState1 = await governanceProgram.account.governanceState.fetch(governanceStatePda);
+      const actualCooldown1 = currentGovState1.cooldownPeriod.toNumber();
+      await warpTime(actualCooldown1 + 1);
 
       // Execute transaction using safe helper
       // If access violation occurs, the helper will skip gracefully
@@ -4283,6 +4289,254 @@ async function warpTime(seconds: number) {
       );
 
       console.log("✓ Correctly rejected setting cap below total_raised");
+    });
+
+    it("41. Allows admin to withdraw unsold tokens from presale vault", async () => {
+      const state = await presaleProgram.account.presaleState.fetch(presaleStatePda);
+      
+      // Check if admin or governance is authorized
+      let authority: PublicKey;
+      let authorityKeypair: Keypair | null = null;
+      
+      if (state.authority.equals(admin.publicKey)) {
+        authority = admin.publicKey;
+        authorityKeypair = admin;
+      } else if (state.governanceSet && state.governance.equals(governanceStatePda)) {
+        // If governance is set, test that admin cannot withdraw
+        const withdrawAmount = new anchor.BN(100).mul(
+          new anchor.BN(10).pow(new anchor.BN(MINT_DECIMALS))
+        );
+        
+        const destinationTokenAccount = await getAssociatedTokenAddress(
+          mint.publicKey,
+          admin.publicKey
+        );
+        
+        await expectError(
+          presaleProgram.methods.withdrawUnsoldTokens(withdrawAmount)
+            .accounts({
+              presaleState: presaleStatePda,
+              authority: admin.publicKey,
+              presaleTokenVaultPda: presaleTokenVaultPda,
+              presaleTokenVault: presaleTokenVault,
+              destinationTokenAccount: destinationTokenAccount,
+              destination: admin.publicKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
+            .signers([admin])
+            .rpc(),
+          "Unauthorized"
+        );
+        
+        console.log("✓ Correctly rejected unsold token withdrawal when governance is set (admin not authorized)");
+        return;
+      } else {
+        throw new Error(`Cannot test: Authority ${state.authority.toString()} is not admin and governance is not set`);
+      }
+
+      // Get initial balances
+      const vaultBefore = await connection.getTokenAccountBalance(presaleTokenVault);
+      const vaultBalanceBefore = new anchor.BN(vaultBefore.value.amount);
+      
+      // Create destination token account for admin if it doesn't exist
+      const destinationTokenAccount = await getAssociatedTokenAddress(
+        mint.publicKey,
+        admin.publicKey
+      );
+      
+      const destinationAccountInfo = await connection.getAccountInfo(destinationTokenAccount);
+      if (!destinationAccountInfo) {
+        const createAtaTx = new Transaction().add(
+          createAssociatedTokenAccountInstruction(
+            admin.publicKey,
+            destinationTokenAccount,
+            admin.publicKey,
+            mint.publicKey
+          )
+        );
+        await sendAndConfirmTransaction(connection, createAtaTx, [admin]);
+      }
+
+      const destinationBefore = await connection.getTokenAccountBalance(destinationTokenAccount);
+      const destinationBalanceBefore = new anchor.BN(destinationBefore.value.amount);
+
+      // Withdraw amount (use a reasonable amount, not more than vault balance)
+      const withdrawAmount = vaultBalanceBefore.gt(new anchor.BN(0)) 
+        ? vaultBalanceBefore.div(new anchor.BN(2)) // Withdraw half if vault has tokens
+        : new anchor.BN(100).mul(new anchor.BN(10).pow(new anchor.BN(MINT_DECIMALS))); // Otherwise use a test amount
+
+      // If vault is empty, we need to fund it first for the test
+      if (vaultBalanceBefore.eq(new anchor.BN(0))) {
+        // Fund the vault by minting tokens to it (if admin has mint authority)
+        const mintInfo = await connection.getParsedAccountInfo(mint.publicKey);
+        if (mintInfo.value && 'parsed' in mintInfo.value.data) {
+          const parsedData = mintInfo.value.data as any;
+          if (parsedData.parsed && parsedData.parsed.info && parsedData.parsed.info.mintAuthority) {
+            const mintAuthority = new PublicKey(parsedData.parsed.info.mintAuthority);
+            if (mintAuthority.equals(admin.publicKey)) {
+              // Admin can mint directly to vault
+              const fundVaultTx = new Transaction().add(
+                createMintToInstruction(
+                  mint.publicKey,
+                  presaleTokenVault,
+                  admin.publicKey,
+                  BigInt(withdrawAmount.mul(new anchor.BN(2)).toString())
+                )
+              );
+              await sendAndConfirmTransaction(connection, fundVaultTx, [admin]);
+            }
+          }
+        }
+      }
+
+      // Re-check vault balance after potential funding
+      const vaultAfterFunding = await connection.getTokenAccountBalance(presaleTokenVault);
+      const vaultBalanceAfterFunding = new anchor.BN(vaultAfterFunding.value.amount);
+      
+      // Adjust withdraw amount if needed
+      const finalWithdrawAmount = vaultBalanceAfterFunding.gt(new anchor.BN(0))
+        ? vaultBalanceAfterFunding.div(new anchor.BN(2))
+        : withdrawAmount;
+
+      // Perform withdrawal
+      const txBuilder = presaleProgram.methods.withdrawUnsoldTokens(finalWithdrawAmount)
+        .accounts({
+          presaleState: presaleStatePda,
+          authority: authority,
+          presaleTokenVaultPda: presaleTokenVaultPda,
+          presaleTokenVault: presaleTokenVault,
+          destinationTokenAccount: destinationTokenAccount,
+          destination: admin.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        });
+      
+      if (authorityKeypair) {
+        txBuilder.signers([authorityKeypair]);
+      }
+      
+      await txBuilder.rpc();
+
+      // Verify balances
+      const vaultAfter = await connection.getTokenAccountBalance(presaleTokenVault);
+      const vaultBalanceAfter = new anchor.BN(vaultAfter.value.amount);
+      
+      const destinationAfter = await connection.getTokenAccountBalance(destinationTokenAccount);
+      const destinationBalanceAfter = new anchor.BN(destinationAfter.value.amount);
+
+      // Check that tokens were transferred
+      expect(vaultBalanceAfter.toString()).to.equal(
+        vaultBalanceAfterFunding.sub(finalWithdrawAmount).toString()
+      );
+      expect(destinationBalanceAfter.toString()).to.equal(
+        destinationBalanceBefore.add(finalWithdrawAmount).toString()
+      );
+
+      console.log("✓ Unsold tokens withdrawn successfully");
+      console.log(`  Withdrawn: ${finalWithdrawAmount.toString()}`);
+      console.log(`  Vault balance before: ${vaultBalanceAfterFunding.toString()}`);
+      console.log(`  Vault balance after: ${vaultBalanceAfter.toString()}`);
+      console.log(`  Destination balance after: ${destinationBalanceAfter.toString()}`);
+    });
+
+    it("42. Rejects withdrawing unsold tokens with amount 0", async () => {
+      const state = await presaleProgram.account.presaleState.fetch(presaleStatePda);
+      
+      // Check if admin or governance is authorized
+      let authority: PublicKey;
+      let authorityKeypair: Keypair | null = null;
+      
+      if (state.authority.equals(admin.publicKey)) {
+        authority = admin.publicKey;
+        authorityKeypair = admin;
+      } else if (state.governanceSet && state.governance.equals(governanceStatePda)) {
+        // If governance is set, test that admin cannot withdraw
+        const destinationTokenAccount = await getAssociatedTokenAddress(
+          mint.publicKey,
+          admin.publicKey
+        );
+        
+        await expectError(
+          presaleProgram.methods.withdrawUnsoldTokens(new anchor.BN(0))
+            .accounts({
+              presaleState: presaleStatePda,
+              authority: admin.publicKey,
+              presaleTokenVaultPda: presaleTokenVaultPda,
+              presaleTokenVault: presaleTokenVault,
+              destinationTokenAccount: destinationTokenAccount,
+              destination: admin.publicKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
+            .signers([admin])
+            .rpc(),
+          "Unauthorized"
+        );
+        
+        console.log("✓ Correctly rejected unsold token withdrawal when governance is set (admin not authorized)");
+        return;
+      } else {
+        throw new Error(`Cannot test: Authority ${state.authority.toString()} is not admin and governance is not set`);
+      }
+
+      const destinationTokenAccount = await getAssociatedTokenAddress(
+        mint.publicKey,
+        admin.publicKey
+      );
+
+      const txBuilder = presaleProgram.methods.withdrawUnsoldTokens(new anchor.BN(0))
+        .accounts({
+          presaleState: presaleStatePda,
+          authority: authority,
+          presaleTokenVaultPda: presaleTokenVaultPda,
+          presaleTokenVault: presaleTokenVault,
+          destinationTokenAccount: destinationTokenAccount,
+          destination: admin.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        });
+      
+      if (authorityKeypair) {
+        txBuilder.signers([authorityKeypair]);
+      }
+
+      await expectError(
+        txBuilder.rpc(),
+        "InvalidAmount"
+      );
+
+      console.log("✓ Correctly rejected withdrawal with amount 0");
+    });
+
+    it("43. Rejects withdrawing unsold tokens from unauthorized account", async () => {
+      const withdrawAmount = new anchor.BN(100).mul(
+        new anchor.BN(10).pow(new anchor.BN(MINT_DECIMALS))
+      );
+
+      const destinationTokenAccount = await getAssociatedTokenAddress(
+        mint.publicKey,
+        user.publicKey
+      );
+
+      await expectError(
+        presaleProgram.methods.withdrawUnsoldTokens(withdrawAmount)
+          .accounts({
+            presaleState: presaleStatePda,
+            authority: user.publicKey,
+            presaleTokenVaultPda: presaleTokenVaultPda,
+            presaleTokenVault: presaleTokenVault,
+            destinationTokenAccount: destinationTokenAccount,
+            destination: user.publicKey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          })
+          .signers([user])
+          .rpc(),
+        "Unauthorized"
+      );
+
+      console.log("✓ Correctly rejected unauthorized unsold token withdrawal");
     });
 
     /* COMMENTED OUT: Not in original failing list - insufficient funds issue
