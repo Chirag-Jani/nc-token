@@ -21,9 +21,9 @@ import {
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
-import { SplProject } from "../../target/types/spl_project";
 import { Governance } from "../../target/types/governance";
 import { Presale } from "../../target/types/presale";
+import { SplProject } from "../../target/types/spl_project";
 
 // Metaplex Token Metadata Program ID
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
@@ -78,6 +78,62 @@ const PRESALE_TOKEN_SUPPLY = BigInt(
   cliArgs.presaleTotalSupply || process.env.PRESALE_TOKEN_SUPPLY || "1000000000"
 );
 
+async function validateConfiguration() {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Validate required approvals
+  if (REQUIRED_APPROVALS < 2) {
+    errors.push("Required approvals must be at least 2");
+  }
+
+  // Validate cooldown period
+  if (COOLDOWN_PERIOD < 1800) {
+    errors.push("Cooldown period must be at least 1800 seconds (30 minutes)");
+  }
+
+  // Validate signers
+  if (SIGNERS.length > 0) {
+    if (REQUIRED_APPROVALS > SIGNERS.length) {
+      errors.push(`Required approvals (${REQUIRED_APPROVALS}) cannot exceed signer count (${SIGNERS.length})`);
+    }
+    
+    // Check for duplicates
+    const unique = new Set(SIGNERS.map(s => s.toString()));
+    if (unique.size !== SIGNERS.length) {
+      errors.push("Duplicate signers detected");
+    }
+
+    if (SIGNERS.length > 10) {
+      errors.push("Maximum 10 signers allowed");
+    }
+  } else {
+    warnings.push("No signers provided - will use wallet as single signer (not recommended for production)");
+  }
+
+  // Validate token decimals
+  if (TOKEN_DECIMALS < 0 || TOKEN_DECIMALS > 9) {
+    errors.push("Token decimals must be between 0 and 9");
+  }
+
+  // Validate total supply
+  if (TOTAL_SUPPLY <= BigInt(0)) {
+    errors.push("Total supply must be greater than 0");
+  }
+
+  if (errors.length > 0) {
+    console.error("\n❌ Configuration Errors:");
+    errors.forEach(err => console.error(`   - ${err}`));
+    throw new Error("Configuration validation failed");
+  }
+
+  if (warnings.length > 0) {
+    console.log("\n⚠️  Configuration Warnings:");
+    warnings.forEach(warn => console.log(`   - ${warn}`));
+    console.log("");
+  }
+}
+
 async function main() {
   console.log("🚀 Starting complete deployment...\n");
   console.log("=".repeat(60));
@@ -90,6 +146,9 @@ async function main() {
   console.log("   Cooldown Period:", COOLDOWN_PERIOD, "seconds");
   console.log("=".repeat(60));
   console.log("");
+
+  // Validate configuration
+  await validateConfiguration();
 
   // Setup connection
   const connection = new Connection(
@@ -121,8 +180,18 @@ async function main() {
     Buffer.from(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
   );
 
+  // Check wallet balance
+  const balance = await connection.getBalance(walletKeypair.publicKey);
+  const minBalance = 5 * 1e9; // 5 SOL minimum
+  if (balance < minBalance) {
+    console.warn(`\n⚠️  Warning: Low wallet balance: ${(balance / 1e9).toFixed(4)} SOL`);
+    console.warn(`   Recommended: At least ${(minBalance / 1e9).toFixed(2)} SOL for deployment`);
+    console.warn("   Continuing anyway...\n");
+  }
+
   console.log("📝 Wallet:", walletKeypair.publicKey.toString());
   console.log("🌐 Network:", connection.rpcEndpoint);
+  console.log("💰 Balance:", (balance / 1e9).toFixed(4), "SOL");
   console.log("");
 
   // Setup Anchor provider
@@ -419,6 +488,43 @@ async function main() {
   deploymentInfo.presaleStatePda = presaleStatePda.toString();
 
   // ============================================================
+  // PHASE 4: Set Treasury Address (Optional)
+  // ============================================================
+  const treasuryAddress = cliArgs.treasuryAddress || process.env.TREASURY_ADDRESS;
+  if (treasuryAddress) {
+    console.log("\n" + "=".repeat(60));
+    console.log("PHASE 4: Setting Treasury Address");
+    console.log("=".repeat(60));
+    
+    console.log("\n🔟 Setting treasury address...");
+    try {
+      const treasuryPubkey = new PublicKey(treasuryAddress);
+      const treasuryTx = await presaleProgram.methods
+        .setTreasuryAddress(treasuryPubkey)
+        .accountsPartial({
+          presaleState: presaleStatePda,
+          authority: walletKeypair.publicKey,
+        })
+        .rpc();
+      
+      console.log("   ✅ Treasury address set:", treasuryTx);
+      console.log("   Treasury:", treasuryPubkey.toString());
+      deploymentInfo.treasuryAddress = treasuryPubkey.toString();
+    } catch (err: any) {
+      console.error("   ⚠️  Failed to set treasury address:", err.message);
+      console.error("   💡 You can set it later with: yarn presale:set-treasury <ADDRESS>");
+    }
+  } else {
+    console.log("\n" + "=".repeat(60));
+    console.log("PHASE 4: Treasury Address (Skipped)");
+    console.log("=".repeat(60));
+    console.log("\nℹ️  No treasury address provided.");
+    console.log("   💡 Set TREASURY_ADDRESS in .env or run:");
+    console.log("      yarn presale:set-treasury <TREASURY_ADDRESS>");
+    console.log("   💡 Treasury address is required before withdrawals can be made.");
+  }
+
+  // ============================================================
   // Save Deployment Info
   // ============================================================
   console.log("\n" + "=".repeat(60));
@@ -476,21 +582,34 @@ async function main() {
   console.log("   ✅ Total Supply:", TOTAL_SUPPLY.toString(), TOKEN_SYMBOL);
   console.log("\n📝 Next Steps:");
   console.log("   1. Review deployment-info.json");
-  console.log("   2. Transfer token authority to governance (optional):");
-  console.log("      ts-node scripts/transfer-authority.ts");
-  console.log("   3. Allow payment tokens in presale:");
-  console.log("      ts-node scripts/allow-payment-token.ts <PAYMENT_TOKEN_MINT>");
-  console.log("   4. Start presale:");
-  console.log("      ts-node scripts/start-presale.ts");
+  if (!treasuryAddress) {
+    console.log("   2. Set treasury address (required for withdrawals):");
+    console.log("      yarn presale:set-treasury <TREASURY_ADDRESS>");
+    console.log("      Or set TREASURY_ADDRESS in .env and redeploy");
+  }
+  console.log("   3. Transfer token authority to governance (optional):");
+  console.log("      yarn governance:transfer");
+  console.log("   4. Allow payment tokens in presale:");
+  console.log("      yarn presale:allow <PAYMENT_TOKEN_MINT>");
+  console.log("   5. Start presale:");
+  console.log("      yarn presale:start");
   console.log("\n" + "=".repeat(60));
 }
 
 main().catch((error) => {
-  console.error("\n❌ Deployment failed:", error);
+  console.error("\n❌ Deployment failed:", error.message || error);
   if (error.logs) {
     console.error("\nTransaction logs:");
     error.logs.forEach((log: string) => console.error("  ", log));
   }
+  if (error.stack && process.env.DEBUG) {
+    console.error("\nStack trace:", error.stack);
+  }
+  console.error("\n💡 Tips:");
+  console.error("   - Check your wallet balance");
+  console.error("   - Verify network connection");
+  console.error("   - Ensure programs are deployed (run 'anchor deploy' if needed)");
+  console.error("   - Check transaction logs above for specific errors");
   process.exit(1);
 });
 

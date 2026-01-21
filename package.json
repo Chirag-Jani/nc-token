@@ -7,32 +7,45 @@
     "deploy:presale": "ts-node scripts/deploy/deploy-presale.ts",
     "deploy:governance": "ts-node scripts/deploy/deploy-governance.ts",
     "deploy:all": "ts-node scripts/deploy/deploy-all.ts",
+    "deploy:programs": "ts-node scripts/deploy/deploy-programs.ts",
     "presale:start": "ts-node scripts/presale/start-presale.ts",
     "presale:check": "ts-node scripts/presale/check-presale-state.ts",
     "presale:buy": "ts-node scripts/presale/buy-presale.ts",
+    "presale:readiness": "ts-node scripts/presale/verify-readiness.ts",
+    "presale:set-treasury": "ts-node scripts/presale/set-treasury-address.ts",
     "governance:init": "ts-node scripts/governance/init-governance.ts",
     "governance:transfer": "ts-node scripts/governance/transfer-authority.ts",
+    "governance:finalize": "ts-node scripts/governance/finalize-authority-transfer.ts",
+    "governance:check-transfer": "ts-node scripts/governance/check-pending-transfer.ts",
+    "governance:link-token": "ts-node scripts/governance/set-token-program.ts",
+    "governance:link-presale": "ts-node scripts/governance/set-presale-program.ts",
+    "governance:queue-treasury": "ts-node scripts/governance/queue-set-treasury.ts",
     "utils:recover-tokens": "ts-node scripts/utils/recover-tokens.ts",
     "utils:revoke-authorities": "ts-node scripts/utils/revoke-authorities.ts",
     "utils:sync-ids": "sh scripts/utils/sync-program-ids.sh",
+    "utils:validate": "ts-node scripts/utils/validate-deployment.ts",
+    "utils:verify": "ts-node scripts/utils/verify-deployment.ts",
+    "utils:health": "ts-node scripts/utils/health-check.ts",
+    "utils:pre-mainnet": "ts-node scripts/utils/pre-mainnet-checklist.ts",
     "test:presale": "anchor test --skip-local-validator tests/presale.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.0",
+    "@metaplex-foundation/mpl-token-metadata": "^3.2.1",
     "@solana/spl-token": "^0.4.8",
-    "@solana/web3.js": "^1.95.2",
-    "@metaplex-foundation/mpl-token-metadata": "^3.2.1"
+    "@solana/web3.js": "^1.95.2"
   },
   "devDependencies": {
-    "chai": "^4.3.4",
-    "mocha": "^9.0.3",
-    "ts-mocha": "^10.0.0",
-    "ts-node": "^10.9.2",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
-    "typescript": "^5.7.3",
-    "prettier": "^2.6.2"
+    "@types/node": "^20.0.0",
+    "chai": "^4.3.4",
+    "mocha": "^9.0.3",
+    "prettier": "^2.6.2",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

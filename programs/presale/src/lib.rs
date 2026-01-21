@@ -35,7 +35,7 @@ use spl_project::program::SplProject;
 // #[allow(unused_imports)]
 // use governance::program::Governance;
 
-declare_id!("4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN");
+declare_id!("9yG757JUMJbWp4WYfUNPp5bhLAVBaHPLpKrTjWxjVURp");
 
 // Constants for token account layout offsets
 pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
