@@ -12,6 +12,7 @@
     "presale:check": "ts-node scripts/presale/check-presale-state.ts",
     "presale:buy": "ts-node scripts/presale/buy-presale.ts",
     "presale:readiness": "ts-node scripts/presale/verify-readiness.ts",
+    "presale:fund": "ts-node scripts/presale/fund-presale-vault.ts",
     "presale:set-treasury": "ts-node scripts/presale/set-treasury-address.ts",
     "governance:init": "ts-node scripts/governance/init-governance.ts",
     "governance:transfer": "ts-node scripts/governance/transfer-authority.ts",
@@ -27,13 +28,18 @@
     "utils:verify": "ts-node scripts/utils/verify-deployment.ts",
     "utils:health": "ts-node scripts/utils/health-check.ts",
     "utils:pre-mainnet": "ts-node scripts/utils/pre-mainnet-checklist.ts",
-    "test:presale": "anchor test --skip-local-validator tests/presale.ts"
+    "test:presale": "anchor test --skip-local-validator tests/presale.ts",
+    "test:buy": "ts-mocha -p ./tsconfig.json -t 1000000 tests/presale-buy-only.ts"
+  },
+  "scripts:env": {
+    "description": "Load .env file before running scripts. Use: source scripts/load-env.sh && yarn <command>"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.0",
     "@metaplex-foundation/mpl-token-metadata": "^3.2.1",
     "@solana/spl-token": "^0.4.8",
-    "@solana/web3.js": "^1.95.2"
+    "@solana/web3.js": "^1.95.2",
+    "bs58": "^4.0.1"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

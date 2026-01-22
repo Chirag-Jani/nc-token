@@ -1,13 +1,24 @@
 {
-  "programId": "HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz",
-  "mint": "2SYoftnz3w31ZbTkt5mt7sVys9MBdgeekEKznyvTubz6",
-  "metadata": "4JbqCd3qWtjkEZVaKfeo67tH29PmzsUC8FotuTA2xXWE",
-  "statePda": "F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV",
-  "tokenAccount": "9urVeNWvNULdZhRAfdJo2LRU1Dc8tDsENeF4koKDDi7i",
-  "totalSupply": 100000000,
-  "decimals": 9,
-  "name": "NC",
-  "symbol": "NC",
   "network": "https://api.devnet.solana.com",
-  "deployedAt": "2026-01-12T20:11:17.860Z"
+  "wallet": "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj",
+  "deployedAt": "2026-01-22T10:55:27.844Z",
+  "metadata": "71C9bb7ptYBNYYa35PKq2PVJDr1eE3Zv9fBYQGXPqdJn",
+  "programId": "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw",
+  "mintAddress": "nMxyv5FMHHM98SZMMQv93R1cY6txkKByQTWh9v98UqQ",
+  "statePda": "D5sj5en4NNvxvxoNY3UtYPPUSE2LWYLsgnLc9UupR2sE",
+  "tokenAccount": "9ocRtwSwNvqFCsPrNJwd8t3UXAATFNfrK4S25U5TwTxE",
+  "totalSupply": "30000000000",
+  "governanceProgramId": "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92",
+  "governanceStatePda": "DKERdrvubinusewUqYLK9fLypgpS6tcWSzX2CwoNy7wC",
+  "requiredApprovals": 2,
+  "cooldownPeriod": 1800,
+  "signers": [
+    "7AR2iUkdY6PR5abRRrHfgcLkSJjEKmLBg7CjNcWd9kri",
+    "5pRAkTdec31NCJ152pJRVPAgGEHydJQ8kwc6oZFdzKJz",
+    "8UvcoXkL5epY5e3Q3KFv5EqWLCnTz3ZcmcGfbVjyvQzZ",
+    "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj"
+  ],
+  "presaleProgramId": "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX",
+  "presaleStatePda": "5zCvsh7gd6xQZVJenWBuPvVkniUdvB1dX9Eupo8D3kvL",
+  "treasuryAddress": "7AR2iUkdY6PR5abRRrHfgcLkSJjEKmLBg7CjNcWd9kri"
 }

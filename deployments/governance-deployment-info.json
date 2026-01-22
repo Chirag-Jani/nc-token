@@ -1,13 +1,15 @@
 {
-  "programId": "5jsHpno8jwFTJCzTtqPWFLT96sQqFxiLTD2a8zvmiunj",
-  "governanceStatePda": "Fzg7MRp5uiRkxtCFWgbDehHwDaqX5WvYK8D2Us8B4xpy",
-  "authority": "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu",
+  "programId": "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92",
+  "governanceStatePda": "DKERdrvubinusewUqYLK9fLypgpS6tcWSzX2CwoNy7wC",
+  "authority": "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj",
   "requiredApprovals": 2,
   "cooldownPeriod": 1800,
   "signers": [
-    "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu",
-    "DimxbGaHQmydurzk3z7X3HV5LmhBKPrkNTxGnyyUDMW6"
+    "7AR2iUkdY6PR5abRRrHfgcLkSJjEKmLBg7CjNcWd9kri",
+    "5pRAkTdec31NCJ152pJRVPAgGEHydJQ8kwc6oZFdzKJz",
+    "8UvcoXkL5epY5e3Q3KFv5EqWLCnTz3ZcmcGfbVjyvQzZ",
+    "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj"
   ],
   "network": "https://api.devnet.solana.com",
-  "deployedAt": "2026-01-12T20:32:08.228Z"
+  "deployedAt": "2026-01-22T10:57:44.834Z"
 }

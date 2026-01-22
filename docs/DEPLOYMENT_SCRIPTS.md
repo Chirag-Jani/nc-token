@@ -118,6 +118,18 @@ yarn governance:link-presale
 
 ## 💰 Presale Scripts
 
+### `yarn presale:fund`
+Funds the presale vault with tokens for sale. Transfers tokens from your wallet to the presale token vault PDA.
+- Default amount: 40M tokens (can be overridden)
+- Automatically creates vault ATA if needed
+- Uses the mint address from deployment info
+
+**Usage:**
+```bash
+yarn presale:fund                    # Fund with default 40M tokens
+yarn presale:fund 50000000          # Fund with 50M tokens
+```
+
 ### `yarn presale:readiness`
 Verifies presale is ready for users:
 - ✅ Presale state initialized

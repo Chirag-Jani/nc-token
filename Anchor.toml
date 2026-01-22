@@ -6,9 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-governance = "8rJ9satfz5SqKx4AJTkLL3y7XwuBRYTz2j7H64kLHQDg"
-presale = "9yG757JUMJbWp4WYfUNPp5bhLAVBaHPLpKrTjWxjVURp"
-spl_project = "FQmKBpQL956VWS2v6S6t5qUhAc6AcVEvQuXVxP1UMv6P"
+governance = "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92"
+presale = "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX"
+spl_project = "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw"
 
 [registry]
 url = "https://api.apr.dev"

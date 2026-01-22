@@ -7,6 +7,7 @@ import {
   createAssociatedTokenAccountInstruction,
   createInitializeMintInstruction,
   createSetAuthorityInstruction,
+  getAccount,
   getAssociatedTokenAddress,
   getMinimumBalanceForRentExemptMint,
 } from "@solana/spl-token";
@@ -16,6 +17,7 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
   clusterApiUrl,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
@@ -24,6 +26,40 @@ import * as path from "path";
 import { Governance } from "../../target/types/governance";
 import { Presale } from "../../target/types/presale";
 import { SplProject } from "../../target/types/spl_project";
+
+// Load .env file if it exists
+try {
+  const envPath = path.join(__dirname, "../../.env");
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf-8");
+    envContent.split("\n").forEach((line) => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+        const [key, ...valueParts] = trimmed.split("=");
+        const rawValue = valueParts.join("=").trim();
+
+        // If value is quoted, keep everything inside quotes (including #)
+        // Otherwise, strip inline comments like: FOO=bar  # comment
+        let value = rawValue;
+        const isQuoted =
+          (value.startsWith("\"") && value.endsWith("\"")) ||
+          (value.startsWith("'") && value.endsWith("'"));
+        if (isQuoted) {
+          value = value.slice(1, -1);
+        } else {
+          value = value.replace(/\s+#.*$/, "").trim();
+        }
+
+        const cleanValue = value.replace(/\r$/, "");
+        if (key && cleanValue && !process.env[key]) {
+          process.env[key] = cleanValue;
+        }
+      }
+    });
+  }
+} catch (error) {
+  // Silently fail if .env can't be loaded
+}
 
 // Metaplex Token Metadata Program ID
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
@@ -49,11 +85,11 @@ const cliArgs = parseArgs();
 const TOKEN_NAME = cliArgs.name || process.env.TOKEN_NAME || "NC";
 const TOKEN_SYMBOL = cliArgs.symbol || process.env.TOKEN_SYMBOL || "NC";
 const TOKEN_DECIMALS = parseInt(
-  cliArgs.decimals || process.env.TOKEN_DECIMALS || "9"
+  cliArgs.decimals || process.env.TOKEN_DECIMALS || "8"
 );
 const TOTAL_SUPPLY = BigInt(
-  cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "100000000"
-); // 100 million tokens
+  cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "30000000000"
+); // 30 billion tokens
 
 // Governance configuration
 const REQUIRED_APPROVALS = parseInt(
@@ -67,12 +103,19 @@ const COOLDOWN_PERIOD = parseInt(
 let SIGNERS: PublicKey[] = [];
 const signersInput = cliArgs.signers || process.env.SIGNERS;
 if (signersInput) {
-  SIGNERS = signersInput.split(",").map((addr: string) => new PublicKey(addr.trim()));
+  try {
+    SIGNERS = signersInput.split(",").map((addr: string) => new PublicKey(addr.trim()));
+  } catch (error: any) {
+    console.error("❌ Error parsing SIGNERS from environment:", error.message);
+    console.error("   SIGNERS value:", signersInput);
+    console.error("   Ensure SIGNERS is comma-separated list of valid Solana addresses");
+    process.exit(1);
+  }
 }
 
 // Presale configuration
 const PRESALE_TOKEN_DECIMALS = parseInt(
-  cliArgs.presaleDecimals || process.env.PRESALE_TOKEN_DECIMALS || "9"
+  cliArgs.presaleDecimals || process.env.PRESALE_TOKEN_DECIMALS || "8"
 );
 const PRESALE_TOKEN_SUPPLY = BigInt(
   cliArgs.presaleTotalSupply || process.env.PRESALE_TOKEN_SUPPLY || "1000000000"
@@ -112,8 +155,8 @@ async function validateConfiguration() {
   }
 
   // Validate token decimals
-  if (TOKEN_DECIMALS < 0 || TOKEN_DECIMALS > 9) {
-    errors.push("Token decimals must be between 0 and 9");
+  if (TOKEN_DECIMALS < 0 || TOKEN_DECIMALS > 18) {
+    errors.push("Token decimals must be between 0 and 18");
   }
 
   // Validate total supply
@@ -144,6 +187,14 @@ async function main() {
   console.log("   Total Supply:", TOTAL_SUPPLY.toString());
   console.log("   Required Approvals:", REQUIRED_APPROVALS);
   console.log("   Cooldown Period:", COOLDOWN_PERIOD, "seconds");
+  if (SIGNERS.length > 0) {
+    console.log("   Signers:", SIGNERS.length);
+    SIGNERS.forEach((signer, idx) => {
+      console.log(`      ${idx + 1}. ${signer.toString()}`);
+    });
+  } else {
+    console.log("   Signers: Not provided (will use wallet)");
+  }
   console.log("=".repeat(60));
   console.log("");
 
@@ -298,6 +349,91 @@ async function main() {
     TOKEN_METADATA_PROGRAM_ID
   );
 
+  // Helper to serialize string with u32 length prefix (Borsh format)
+  const serializeString = (str: string): Buffer => {
+    const strBytes = Buffer.from(str, "utf8");
+    const len = Buffer.allocUnsafe(4);
+    len.writeUInt32LE(strBytes.length, 0);
+    return Buffer.concat([len, strBytes]);
+  };
+
+  // CreateMetadataAccountV3 instruction discriminator = 33
+  const discriminator = Buffer.from([33]);
+
+  // Serialize DataV2 struct (Borsh format for V3)
+  const nameBytes = serializeString(TOKEN_NAME);
+  const symbolBytes = serializeString(TOKEN_SYMBOL);
+  const uriBytes = serializeString(""); // Empty URI - can be updated later
+
+  // DataV2 struct: name, symbol, uri, seller_fee_basis_points, creators, collection, uses
+  const dataV2Parts: Buffer[] = [
+    nameBytes, // name: String
+    symbolBytes, // symbol: String
+    uriBytes, // uri: String
+    Buffer.from([0, 0]), // seller_fee_basis_points: u16 (little-endian)
+    Buffer.from([0]), // creators: Option<Vec<Creator>> - None
+    Buffer.from([0]), // collection: Option<Collection> - None
+    Buffer.from([0]), // uses: Option<Uses> - None
+  ];
+  const dataV2 = Buffer.concat(dataV2Parts);
+
+  // CreateMetadataAccountArgsV3: data (DataV2), is_mutable (bool), collection_details (Option)
+  const argsV3 = Buffer.concat([
+    dataV2, // data: DataV2
+    Buffer.from([1]), // is_mutable: bool (true)
+    Buffer.from([0]), // collection_details: Option<CollectionDetails> - None
+  ]);
+
+  // Full instruction: discriminator + args
+  const instructionData = Buffer.concat([discriminator, argsV3]);
+
+  // Rent sysvar
+  const rentSysvar = new PublicKey(
+    "SysvarRent111111111111111111111111111111111"
+  );
+
+  // CreateMetadataAccountV3 account order:
+  // 0. metadata (writable)
+  // 1. mint (readonly)
+  // 2. mint_authority (signer)
+  // 3. payer (writable, signer)
+  // 4. update_authority (readonly)
+  // 5. system_program (readonly)
+  // 6. rent (readonly)
+  const metadataInstruction = new TransactionInstruction({
+    programId: TOKEN_METADATA_PROGRAM_ID,
+    keys: [
+      { pubkey: metadataPda, isSigner: false, isWritable: true },
+      { pubkey: mintKeypair.publicKey, isSigner: false, isWritable: false },
+      { pubkey: walletKeypair.publicKey, isSigner: true, isWritable: false },
+      { pubkey: walletKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: walletKeypair.publicKey, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: rentSysvar, isSigner: false, isWritable: false },
+    ],
+    data: instructionData,
+  });
+
+  try {
+    const metadataTx = new Transaction().add(metadataInstruction);
+    await sendAndConfirmTransaction(connection, metadataTx, [walletKeypair], {
+      commitment: "confirmed",
+    });
+    console.log("   ✅ Metadata created:", metadataPda.toString());
+    console.log("   📝 Name:", TOKEN_NAME);
+    console.log("   🏷️  Symbol:", TOKEN_SYMBOL);
+    deploymentInfo.metadata = metadataPda.toString();
+  } catch (error: any) {
+    console.error("   ❌ Metadata creation failed:", error.message);
+    if (error.logs) {
+      console.error("   Logs:", error.logs.join("\n"));
+    }
+    console.log(
+      "   ⚠️  Continuing without metadata - token will work but won't show name/symbol in wallets"
+    );
+    console.log("   💡 You can add metadata later using Metaplex tools");
+  }
+
   // Transfer mint authority to state PDA
   console.log("\n4️⃣ Transferring mint authority to state PDA...");
   const transferAuthTx = new Transaction().add(
@@ -337,21 +473,174 @@ async function main() {
   console.log("   ✅ Token account:", tokenAccount.toString());
 
   // Mint total supply
-  const supplyAmount = TOTAL_SUPPLY * BigInt(10 ** TOKEN_DECIMALS);
+  // Calculate 10^decimals as BigInt to avoid precision loss
+  // Use a loop since BigInt exponentiation requires ES2016+
+  let decimalsMultiplier = BigInt(1);
+  for (let i = 0; i < TOKEN_DECIMALS; i++) {
+    decimalsMultiplier = decimalsMultiplier * BigInt(10);
+  }
+  const totalSupplyAmount = TOTAL_SUPPLY * decimalsMultiplier;
+  
+  // u64 max value: 18,446,744,073,709,551,615
+  const U64_MAX = BigInt("18446744073709551615");
+  
   console.log(`   📦 Minting ${TOTAL_SUPPLY.toString()} tokens...`);
+  console.log(`   📊 Total amount: ${totalSupplyAmount.toString()} base units`);
+  
+  // Check if total supply exceeds u64 max (mint supply limit)
+  if (totalSupplyAmount > U64_MAX) {
+    const maxTokensWithDecimals = U64_MAX / decimalsMultiplier;
+    
+    // Calculate what decimals would work for the requested supply
+    let suggestedDecimals = TOKEN_DECIMALS;
+    let suggestedMultiplier = decimalsMultiplier;
+    let suggestedAmount = totalSupplyAmount;
+    
+    // Try reducing decimals until it fits
+    while (suggestedAmount > U64_MAX && suggestedDecimals > 0) {
+      suggestedDecimals--;
+      suggestedMultiplier = BigInt(1);
+      for (let i = 0; i < suggestedDecimals; i++) {
+        suggestedMultiplier = suggestedMultiplier * BigInt(10);
+      }
+      suggestedAmount = TOTAL_SUPPLY * suggestedMultiplier;
+    }
+    
+    if (suggestedAmount <= U64_MAX && suggestedDecimals < TOKEN_DECIMALS) {
+      throw new Error(
+        `❌ Total supply exceeds u64 maximum with ${TOKEN_DECIMALS} decimals!\n` +
+        `   Requested: ${TOTAL_SUPPLY.toString()} tokens with ${TOKEN_DECIMALS} decimals (${totalSupplyAmount.toString()} base units)\n` +
+        `   Maximum with ${TOKEN_DECIMALS} decimals: ${maxTokensWithDecimals.toString()} tokens\n` +
+        `   \n` +
+        `   💡 Solution: Use ${suggestedDecimals} decimals instead (allows ${TOTAL_SUPPLY.toString()} tokens)\n` +
+        `   Set TOKEN_DECIMALS=${suggestedDecimals} and redeploy\n` +
+        `   \n` +
+        `   Note: 9 decimals is standard for Solana tokens and allows up to ~18.4 billion tokens`
+      );
+    } else {
+      throw new Error(
+        `❌ Total supply exceeds u64 maximum!\n` +
+        `   Requested: ${TOTAL_SUPPLY.toString()} tokens (${totalSupplyAmount.toString()} base units)\n` +
+        `   Maximum with ${TOKEN_DECIMALS} decimals: ${maxTokensWithDecimals.toString()} tokens (${U64_MAX.toString()} base units)\n` +
+        `   \n` +
+        `   Solutions:\n` +
+        `   1. Reduce total supply to ${maxTokensWithDecimals.toString()} tokens or less\n` +
+        `   2. Reduce decimals (e.g., 9 decimals allows up to 18,446,744,073 tokens)\n` +
+        `   3. Mint only what you need initially (e.g., 1 billion for presale)`
+      );
+    }
+  }
+  
+  // Batch minting configuration - mint in smaller, manageable batches
+  // Default: 1 billion tokens per batch (can be overridden via env var)
+  const BATCH_SIZE_TOKENS = BigInt(
+    process.env.MINT_BATCH_SIZE_TOKENS || "1000000000" // 1 billion tokens per batch
+  );
+  const batchSizeBaseUnits = BATCH_SIZE_TOKENS * decimalsMultiplier;
+  
+  // Check if we need to batch mint
+  if (totalSupplyAmount > batchSizeBaseUnits) {
+    console.log(`   ⚠️  Minting in batches of ${BATCH_SIZE_TOKENS.toString()} tokens per batch...`);
+    console.log(`   📊 Batch size: ${batchSizeBaseUnits.toString()} base units`);
+    
+    let remaining = totalSupplyAmount;
+    let batchNumber = 1;
+    const totalBatches = Number((totalSupplyAmount + batchSizeBaseUnits - BigInt(1)) / batchSizeBaseUnits); // Ceiling division
+    console.log(`   📦 Total batches needed: ${totalBatches}`);
+    
+    while (remaining > BigInt(0)) {
+      // Get current balance before each batch to track progress
+      let currentBalance = BigInt(0);
+      try {
+        const accountInfo = await getAccount(connection, tokenAccount);
+        currentBalance = BigInt(accountInfo.amount.toString());
+      } catch (error) {
+        currentBalance = BigInt(0);
+      }
+      
+      // Calculate batch amount: smaller of remaining or batch size
+      let batchAmount = remaining > batchSizeBaseUnits ? batchSizeBaseUnits : remaining;
+      
+      // Also check token account capacity (shouldn't be an issue with reasonable batch sizes)
+      const availableAccountSpace = U64_MAX - currentBalance;
+      if (batchAmount > availableAccountSpace) {
+        console.log(`   ⚠️  Batch would exceed account capacity, reducing batch size...`);
+        batchAmount = availableAccountSpace;
+        
+        if (batchAmount <= BigInt(0)) {
+          throw new Error(
+            `Token account has reached maximum capacity (${U64_MAX.toString()} base units). ` +
+            `Cannot mint remaining ${remaining.toString()} base units. ` +
+            `Consider using multiple token accounts or reducing total supply.`
+          );
+        }
+      }
+      
+      const batchTokens = batchAmount / decimalsMultiplier;
+      
+      // Ensure batchAmount fits in u64
+      if (batchAmount > U64_MAX) {
+        throw new Error(`Batch amount ${batchAmount.toString()} exceeds u64 max`);
+      }
+      
+      // Convert to string and validate it's a valid number
+      const batchAmountStr = batchAmount.toString();
+      const batchAmountBN = new anchor.BN(batchAmountStr);
+      
+      // Verify BN is within u64 range
+      const u64MaxBN = new anchor.BN("18446744073709551615");
+      if (batchAmountBN.gt(u64MaxBN)) {
+        throw new Error(`BN value ${batchAmountStr} exceeds u64 max`);
+      }
+      
+      const remainingTokens = remaining / decimalsMultiplier;
+      console.log(`   📦 Batch ${batchNumber}/${totalBatches}: Minting ${batchTokens.toString()} tokens (${batchAmountStr} base units)...`);
+      console.log(`   📊 Progress: ${(batchNumber - 1) * Number(BATCH_SIZE_TOKENS)} / ${TOTAL_SUPPLY.toString()} tokens`);
+      console.log(`   💰 Remaining: ${remainingTokens.toString()} tokens`);
+      
+      const mintTx = await tokenProgram.methods
+        .mintTokens(batchAmountBN)
+        .accountsPartial({
+          mint: mintKeypair.publicKey,
+          to: tokenAccount,
+          state: tokenStatePda,
+          governance: walletKeypair.publicKey,
+          recipientBlacklist: SystemProgram.programId,
+        })
+        .rpc();
+      
+      console.log(`   ✅ Batch ${batchNumber} minted: ${mintTx}`);
+      
+      remaining -= batchAmount;
+      batchNumber++;
+      
+      // Small delay between batches to avoid rate limiting
+      if (remaining > BigInt(0)) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+      }
+    }
+    
+    console.log("   ✅ All tokens minted successfully!");
+  } else {
+    // Verify amount fits in u64
+    if (totalSupplyAmount > U64_MAX) {
+      throw new Error(`Total supply amount ${totalSupplyAmount.toString()} exceeds u64 max. Use batch minting.`);
+    }
+    
+    const totalSupplyBN = new anchor.BN(totalSupplyAmount.toString());
+    const mintTx = await tokenProgram.methods
+      .mintTokens(totalSupplyBN)
+      .accountsPartial({
+        mint: mintKeypair.publicKey,
+        to: tokenAccount,
+        state: tokenStatePda,
+        governance: walletKeypair.publicKey,
+        recipientBlacklist: SystemProgram.programId,
+      })
+      .rpc();
 
-  const mintTx = await tokenProgram.methods
-    .mintTokens(new anchor.BN(supplyAmount.toString()))
-    .accountsPartial({
-      mint: mintKeypair.publicKey,
-      to: tokenAccount,
-      state: tokenStatePda,
-      governance: walletKeypair.publicKey,
-      recipientBlacklist: SystemProgram.programId,
-    })
-    .rpc();
-
-  console.log("   ✅ Tokens minted:", mintTx);
+    console.log("   ✅ Tokens minted:", mintTx);
+  }
 
   deploymentInfo.programId = tokenProgram.programId.toString();
   deploymentInfo.mintAddress = mintKeypair.publicKey.toString();
@@ -370,12 +659,29 @@ async function main() {
   if (SIGNERS.length === 0) {
     console.log("\n⚠️  No signers provided, using wallet as signer");
     SIGNERS = [walletKeypair.publicKey];
+  } else {
+    // Ensure wallet is in signers list (required for set_token_program and set_presale_program)
+    const walletInSigners = SIGNERS.some(s => s.toString() === walletKeypair.publicKey.toString());
+    if (!walletInSigners) {
+      console.log("\n⚠️  Wallet not in signers list, adding it...");
+      SIGNERS.push(walletKeypair.publicKey);
+    }
   }
 
   console.log("\n6️⃣ Initializing governance...");
   console.log("   Required Approvals:", REQUIRED_APPROVALS);
   console.log("   Cooldown Period:", COOLDOWN_PERIOD, "seconds");
   console.log("   Signers:", SIGNERS.length);
+  SIGNERS.forEach((signer, idx) => {
+    console.log(`      ${idx + 1}. ${signer.toString()}`);
+  });
+  
+  // Validate before attempting initialization
+  if (REQUIRED_APPROVALS > SIGNERS.length) {
+    console.error(`\n❌ Error: Required approvals (${REQUIRED_APPROVALS}) cannot exceed signer count (${SIGNERS.length})`);
+    console.error("   Fix: Either reduce REQUIRED_APPROVALS or add more signers to SIGNERS env variable");
+    process.exit(1);
+  }
 
   try {
     const govTx = await governanceProgram.methods
@@ -446,7 +752,7 @@ async function main() {
       .initialize(
         walletKeypair.publicKey, // admin
         mintKeypair.publicKey, // presale_token_mint
-        tokenProgram.programId, // token_program
+        TOKEN_PROGRAM_ID, // token_program (SPL Token v1)
         tokenStatePda, // token_program_state
         tokenPriceUsdMicro // token_price_usd_micro
       )

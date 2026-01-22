@@ -35,7 +35,7 @@ use spl_project::program::SplProject;
 // #[allow(unused_imports)]
 // use governance::program::Governance;
 
-declare_id!("9yG757JUMJbWp4WYfUNPp5bhLAVBaHPLpKrTjWxjVURp");
+declare_id!("czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX");
 
 // Constants for token account layout offsets
 pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
@@ -57,6 +57,8 @@ pub const CHAINLINK_DECIMALS: u8 = 8;
 // SOL has 9 decimals (lamports)
 pub const SOL_DECIMALS: u8 = 9;
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
+// Token has 8 decimals (allows up to 184 billion supply with u64)
+pub const TOKEN_DECIMALS: u8 = 8;
 // Staleness threshold: 3600 seconds (1 hour) - price feed should be updated within this time
 pub const PRICE_FEED_STALENESS_THRESHOLD_SECONDS: i64 = 3600;
 
@@ -875,30 +877,34 @@ pub mod presale {
         // sol_price_usd is i128 from Chainlink, convert to u128 (we already checked it's > 0)
         let sol_price_usd_u128 = sol_price_usd as u128;
         
-        // Calculate: tokens = (sol_amount * sol_price_usd * 1_000_000) / (token_price_usd_micro * 10^8 * 10^9)
+        // Calculate: tokens = (sol_amount * sol_price_usd * 1_000_000 * 10^8) / (token_price_usd_micro * 10^8)
         // Where:
         // - sol_amount is in lamports (9 decimals)
         // - sol_price_usd has 8 decimals from Chainlink
         // - token_price_usd_micro is in micro-USD (6 decimals, e.g., 1000 = $0.001)
-        // - We need to account for all decimals properly
-        
-        // Formula: tokens = (sol_amount * sol_price_usd * 1_000_000) / (token_price_usd_micro * 10^17)
-        // This accounts for:
-        // - sol_amount: 9 decimals (lamports)
-        // - sol_price_usd: 8 decimals
-        // - token_price_usd_micro: 6 decimals (micro-USD)
-        // Result needs to be in token base units (typically 9 decimals)
+        // - Result is in token base units (8 decimals)
+        //
+        // Formula breakdown:
+        // 1. SOL to USD: (sol_amount * sol_price_usd) / (10^9 * 10^8) = USD value
+        // 2. USD to tokens: USD_value / (token_price_usd_micro / 10^6) = token value (human-readable)
+        // 3. Combined: (sol_amount * sol_price_usd * 10^6) / (token_price_usd_micro * 10^9 * 10^8)
+        // 4. Convert to base units (8 decimals): multiply by 10^8
+        //    tokens_base = (sol_amount * sol_price_usd * 10^6 * 10^8) / (token_price_usd_micro * 10^9 * 10^8)
+        // 5. Simplified: tokens_base = (sol_amount * sol_price_usd * 10^6) / (token_price_usd_micro * 10^9)
+        //    tokens_base = (sol_amount * sol_price_usd * 10^6) / (token_price_usd_micro * 10^9)
         
         let tokens_to_receive_u128 = (sol_amount as u128)
             .checked_mul(sol_price_usd_u128)
             .ok_or(PresaleError::Overflow)?
-            .checked_mul(1_000_000u128) // Convert to micro-USD
+            .checked_mul(1_000_000u128) // Convert to micro-USD (10^6)
+            .ok_or(PresaleError::Overflow)?
+            .checked_mul(10u128.pow(TOKEN_DECIMALS as u32)) // 10^8 for token base units
             .ok_or(PresaleError::Overflow)?
             .checked_div(
                 (presale_state.token_price_usd_micro as u128)
-                    .checked_mul(10u128.pow(CHAINLINK_DECIMALS as u32)) // 10^8
+                    .checked_mul(10u128.pow(SOL_DECIMALS as u32)) // 10^9 for SOL decimals
                     .ok_or(PresaleError::Overflow)?
-                    .checked_mul(10u128.pow(SOL_DECIMALS as u32)) // 10^9
+                    .checked_mul(10u128.pow(CHAINLINK_DECIMALS as u32)) // 10^8 for Chainlink decimals
                     .ok_or(PresaleError::Overflow)?
             )
             .ok_or(PresaleError::Overflow)?;

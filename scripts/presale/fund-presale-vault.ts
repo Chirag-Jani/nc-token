@@ -56,12 +56,21 @@ async function main() {
     throw new Error("❌ presale-deployment-info.json not found. Run 'yarn deploy:presale' first.");
   }
 
-  // IMPORTANT: Use presale token mint from presale-deployment-info.json
-  // This must match what the presale was initialized with
-  if (!presaleInfo.presaleTokenMint) {
-    throw new Error("❌ presaleTokenMint not found in presale-deployment-info.json");
+  // IMPORTANT: Use the same mint the presale was initialized with.
+  // Different deploy scripts store this under different keys.
+  const presaleMintStr =
+    presaleInfo.presaleTokenMint ||
+    presaleInfo.mintAddress ||
+    presaleInfo.mint ||
+    presaleInfo.presale_token_mint;
+
+  if (!presaleMintStr) {
+    throw new Error(
+      "❌ Could not determine presale mint from presale-deployment-info.json (expected one of: presaleTokenMint, mintAddress, mint)"
+    );
   }
-  const mintAddress = new PublicKey(presaleInfo.presaleTokenMint);
+
+  const mintAddress = new PublicKey(presaleMintStr);
   
   // Also get main mint for reference
   const mainMintStr = deploymentInfo.mint || deploymentInfo.mintAddress;

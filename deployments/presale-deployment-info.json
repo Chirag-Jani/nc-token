@@ -1,14 +1,8 @@
 {
-  "presaleProgramId": "4wdP1DAqMq2F9TjGuodu3axSyJZcNcgTzT7eVp5JQKFN",
-  "tokenProgramId": "HSW8GX2DxvZE3ekSnviVN7LPw2rsHp6EJy4oGDaSYCAz",
-  "presaleStatePda": "5MYJdcAhKzvL5wACZEhuPMmeLi7FshAgteN4x4Fq12fk",
-  "tokenStatePda": "F6Sad7abkq723ePiBTSsLWDDGenRKUQcBtCBuPn3H9ZV",
-  "presaleTokenMint": "2SYoftnz3w31ZbTkt5mt7sVys9MBdgeekEKznyvTubz6",
-  "presaleTokenVault": "DYt8g1jtNxGPrJLXSMtZb1UWnxzgecHVmuAnLhAfngaF",
-  "presaleTokenVaultPda": "5jGybMjyQRh7ijUtYFBZqq2J2RPAcELppHRoh2vWDguC",
-  "admin": "4rRhV7DQJMdNAJVh59qggwhEgnmKsTrggPXQeT2oekzu",
-  "totalSupply": "1000000000",
-  "decimals": 9,
+  "presaleProgramId": "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX",
+  "presaleStatePda": "5zCvsh7gd6xQZVJenWBuPvVkniUdvB1dX9Eupo8D3kvL",
+  "tokenProgramId": "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw",
+  "mintAddress": "nMxyv5FMHHM98SZMMQv93R1cY6txkKByQTWh9v98UqQ",
   "network": "https://api.devnet.solana.com",
-  "deployedAt": "2026-01-12T21:37:01.532Z"
+  "deployedAt": "2026-01-22T10:57:44.834Z"
 }

@@ -27,7 +27,7 @@ use anchor_spl::token::{self, Burn, MintTo, SetAuthority, Token, Transfer, Token
 use anchor_spl::token::spl_token::solana_program::program_pack::Pack;
 use anchor_spl::token::spl_token::state::Account as SplTokenAccount;
 
-declare_id!("FQmKBpQL956VWS2v6S6t5qUhAc6AcVEvQuXVxP1UMv6P");
+declare_id!("DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw");
 
 #[error_code]
 pub enum TokenError {

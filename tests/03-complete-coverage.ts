@@ -1,28 +1,28 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountInstruction,
-  createInitializeMintInstruction,
-  createMintToInstruction,
-  getAssociatedTokenAddress,
-  getMinimumBalanceForRentExemptMint,
-  MINT_SIZE,
-  TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    createAssociatedTokenAccountInstruction,
+    createInitializeMintInstruction,
+    createMintToInstruction,
+    getAssociatedTokenAddress,
+    getMinimumBalanceForRentExemptMint,
+    MINT_SIZE,
+    TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
-  Keypair,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  sendAndConfirmTransaction,
-  SystemProgram,
-  Transaction,
+    Keypair,
+    LAMPORTS_PER_SOL,
+    PublicKey,
+    sendAndConfirmTransaction,
+    SystemProgram,
+    Transaction,
 } from "@solana/web3.js";
 import { expect } from "chai";
-import { createHash } from "crypto";
 import { Governance } from "../target/types/governance";
 import { Presale } from "../target/types/presale";
 import { SplProject } from "../target/types/spl_project";
+import { loadTestKeys } from "./key-loader";
 
 // Chainlink SOL/USD feed address
 // Note: There is no devnet feed available, so we use the mainnet feed for both networks
@@ -32,13 +32,6 @@ const CHAINLINK_SOL_USD_FEED = new PublicKey("CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F
 // Helper to get Chainlink feed (same for all networks)
 function getChainlinkFeed(): PublicKey {
   return CHAINLINK_SOL_USD_FEED;
-}
-
-// --- HELPER FOR DETERMINISTIC KEYS ---
-// This ensures that keypairs match presale.ts and spl-project.ts
-function getFixedKeypair(seedString: string): Keypair {
-  const seed = createHash('sha256').update(seedString).digest();
-  return Keypair.fromSeed(seed);
 }
 
 /**
@@ -61,18 +54,19 @@ describe("Missing Test Cases - Complete Coverage", () => {
   const governanceProgram = anchor.workspace.Governance as Program<Governance>;
   const connection = provider.connection;
 
-  // --- FIXED KEYPAIRS (Must match presale.ts and spl-project.ts) ---
-  const admin = getFixedKeypair("admin-authority-seed");
-  const mint = getFixedKeypair("main-mint-seed");
-  const signer1 = getFixedKeypair("signer-one-seed");
-  const signer2 = getFixedKeypair("signer-two-seed");
-  const signer3 = getFixedKeypair("signer-three-seed");
+  // --- LOAD KEYPAIRS FROM CONFIG (or use deterministic fallback) ---
+  const keys = loadTestKeys();
+  const admin = keys.authority;
+  const mint = keys.mint;
+  const signer1 = keys.signer1;
+  const signer2 = keys.signer2;
+  const signer3 = keys.signer3;
   
-  // Random keypairs for non-authority roles (safe to generate)
-  const user = Keypair.generate();
-  const recipient = Keypair.generate();
-  const blacklistedUser = Keypair.generate();
-  const restrictedUser = Keypair.generate();
+  // User keys (can be replaced in test-keys.json)
+  const user = keys.user;
+  const recipient = keys.recipient;
+  const blacklistedUser = keys.blacklistedUser;
+  const restrictedUser = Keypair.generate(); // Additional test user
 //   let whitelistedUser: Keypair;
 //   let nonWhitelistedUser: Keypair;
   const poolAddress = Keypair.generate();

@@ -2,32 +2,26 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import {
-  MINT_SIZE,
-  TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountInstruction,
-  createInitializeMintInstruction,
-  getAccount,
-  getAssociatedTokenAddress,
-  getMinimumBalanceForRentExemptMint
+    MINT_SIZE,
+    TOKEN_PROGRAM_ID,
+    createAssociatedTokenAccountInstruction,
+    createInitializeMintInstruction,
+    getAccount,
+    getAssociatedTokenAddress,
+    getMinimumBalanceForRentExemptMint
 } from "@solana/spl-token";
 import {
-  Keypair,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  sendAndConfirmTransaction,
+    Keypair,
+    LAMPORTS_PER_SOL,
+    PublicKey,
+    SystemProgram,
+    Transaction,
+    sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import { expect } from "chai";
-import { createHash } from "crypto";
 import { Governance } from "../target/types/governance";
 import { SplProject } from "../target/types/spl_project";
-
-// --- HELPER FOR DETERMINISTIC KEYS ---
-function getFixedKeypair(seedString: string): Keypair {
-  const seed = createHash('sha256').update(seedString).digest();
-  return Keypair.fromSeed(seed);
-}
+import { loadTestKeys } from "./key-loader";
 
 describe("SPL Token & Governance Tests - Fixed", () => {
   const provider = anchor.AnchorProvider.env();
@@ -37,18 +31,19 @@ describe("SPL Token & Governance Tests - Fixed", () => {
   const governanceProgram = anchor.workspace.Governance as Program<Governance>;
   const connection = provider.connection;
 
-  // --- FIXED KEYPAIRS (Must match presale.ts seeds) ---
-  const authority = getFixedKeypair("admin-authority-seed");
-  const mint = getFixedKeypair("main-mint-seed");
-  const signer1 = getFixedKeypair("signer-one-seed");
-  const signer2 = getFixedKeypair("signer-two-seed");
-  const signer3 = getFixedKeypair("signer-three-seed");
+  // --- LOAD KEYPAIRS FROM CONFIG (or use deterministic fallback) ---
+  const keys = loadTestKeys();
+  const authority = keys.authority;
+  const mint = keys.mint;
+  const signer1 = keys.signer1;
+  const signer2 = keys.signer2;
+  const signer3 = keys.signer3;
   const approver1 = signer2;
 
-  // Random keys for standard users are fine
-  const user = Keypair.generate();
-  const recipient = Keypair.generate();
-  const blacklistedUser = Keypair.generate();
+  // User keys (can be replaced in test-keys.json)
+  const user = keys.user;
+  const recipient = keys.recipient;
+  const blacklistedUser = keys.blacklistedUser;
 
   let tokenStatePda: PublicKey;
   let governanceStatePda: PublicKey;

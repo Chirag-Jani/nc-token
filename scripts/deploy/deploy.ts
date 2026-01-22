@@ -48,7 +48,7 @@ const cliArgs = parseArgs();
 const TOKEN_NAME = cliArgs.name || process.env.TOKEN_NAME || "NC";
 const TOKEN_SYMBOL = cliArgs.symbol || process.env.TOKEN_SYMBOL || "NC";
 const TOKEN_DECIMALS = parseInt(
-  cliArgs.decimals || process.env.TOKEN_DECIMALS || "9"
+  cliArgs.decimals || process.env.TOKEN_DECIMALS || "8"
 );
 const TOTAL_SUPPLY = BigInt(
   cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "100000000"

@@ -9,9 +9,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
-  Transaction,
-  clusterApiUrl,
-  sendAndConfirmTransaction,
+  clusterApiUrl
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -35,7 +33,7 @@ const cliArgs = parseArgs();
 
 // Configuration - can be overridden by environment variables or command-line arguments
 const PRESALE_TOKEN_DECIMALS = parseInt(
-  cliArgs.decimals || process.env.PRESALE_TOKEN_DECIMALS || "9"
+  cliArgs.decimals || process.env.PRESALE_TOKEN_DECIMALS || "8"
 );
 const PRESALE_TOKEN_SUPPLY = BigInt(
   cliArgs.totalSupply || process.env.PRESALE_TOKEN_SUPPLY || "1000000000"
@@ -167,7 +165,7 @@ async function main() {
       .initialize(
         walletKeypair.publicKey, // admin
         presaleTokenMint, // presale_token_mint (using main token mint)
-        tokenProgram.programId, // token_program
+        TOKEN_PROGRAM_ID, // token_program (SPL Token v1)
         tokenStatePda, // token_program_state
         tokenPriceUsdMicro // token_price_usd_micro
       )

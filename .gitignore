@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Test keys (contains private keys - never commit!)
+tests/test-keys.json
+
 # Anchor
 .anchor
 test-ledger
