@@ -34,7 +34,7 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("eFgtAai6S3N3dygPG9ajxxHVQJ2evn1o5sZ3LjmYqAL");
+declare_id!("38iPVnmu4HXywjU4ivVjBLQUENFGGQXe5erx78niLkbK");
 
 // Import token program (for later CPI integration)
 #[allow(unused_imports)]

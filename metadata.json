@@ -1,0 +1,6 @@
+{
+  "name": "NC Token",
+  "symbol": "NC",
+  "description": "NC Token is a multi-chain Real-World Asset (RWA) ecosystem that allows users to participate in real construction / real estate development projects using NFT Bonds.\nEach NFT Bond represents a fractional participation record in a specific project and provides a fixed project yield (typically 15–20%) after project completion and repayment.\nThe platform is designed with strong investor protection and compliance-focused controls, including:\n- Centralized admin control for operational security\n- Role-Based Access Control (RBAC) enforced on-chain\n- Strict project lifecycle state machine (non-reversible)\n- Multi-signature treasury custody for funds\n- Anti-dump sell limits to protect token price stability\n- Emergency pause / circuit breaker for ecosystem safety\n- Cross-chain supply integrity via Wormhole bridging\n- NFT Bond burn-on-claim (deflationary bond model) to prevent double claims",
+  "image": "https://silver-double-manatee-474.mypinata.cloud/ipfs/bafkreia56lms6vv2hgpfyblsufabyzw6ilajuwpvwjohqjzrmhpyadb3n4"
+}

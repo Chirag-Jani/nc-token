@@ -1,6 +1,6 @@
 {
-  "programId": "eFgtAai6S3N3dygPG9ajxxHVQJ2evn1o5sZ3LjmYqAL",
-  "governanceStatePda": "JCEhvt8aVtjZ1XExRFfbxrSqMSf77HUXhbnUjE698Zh4",
+  "programId": "38iPVnmu4HXywjU4ivVjBLQUENFGGQXe5erx78niLkbK",
+  "governanceStatePda": "H2GrPMvpqpazFaZpL5AbYWz61ccJuWGSSyGF3JSjexMS",
   "authority": "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj",
   "requiredApprovals": 2,
   "cooldownPeriod": 1800,
@@ -11,5 +11,5 @@
     "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj"
   ],
   "network": "https://mainnet.helius-rpc.com/?api-key=519f61a1-0ac3-43b0-8037-f33a83718978",
-  "deployedAt": "2026-01-23T05:45:47.668Z"
+  "deployedAt": "2026-01-23T11:06:03.607Z"
 }

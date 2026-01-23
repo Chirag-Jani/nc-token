@@ -54,6 +54,14 @@ const TOTAL_SUPPLY = BigInt(
   cliArgs.totalSupply || process.env.TOTAL_SUPPLY || "100000000"
 ); // 100 million tokens
 
+// Metadata configuration for token image and description
+// METADATA_URI: Direct URI to a hosted JSON metadata file (takes precedence if provided)
+// TOKEN_IMAGE: URL to the token's image (used when building metadata JSON)
+// TOKEN_DESCRIPTION: Description of the token (used when building metadata JSON)
+const METADATA_URI = cliArgs.metadataUri || process.env.METADATA_URI || "";
+const TOKEN_IMAGE = cliArgs.image || process.env.TOKEN_IMAGE || "";
+const TOKEN_DESCRIPTION = cliArgs.description || process.env.TOKEN_DESCRIPTION || "";
+
 // Validate decimals
 if (TOKEN_DECIMALS < 0 || TOKEN_DECIMALS > 9) {
   throw new Error("Decimals must be between 0 and 9");
@@ -196,7 +204,12 @@ async function main() {
   // Serialize DataV2 struct (Borsh format for V3)
   const nameBytes = serializeString(TOKEN_NAME);
   const symbolBytes = serializeString(TOKEN_SYMBOL);
-  const uriBytes = serializeString(""); // Empty URI
+  
+  // Use METADATA_URI if provided, otherwise leave empty
+  // Note: The URI should point to a JSON file with structure:
+  // { "name": "Token Name", "symbol": "SYMBOL", "description": "...", "image": "https://..." }
+  const metadataUriToUse = METADATA_URI;
+  const uriBytes = serializeString(metadataUriToUse);
 
   // DataV2 struct: name, symbol, uri, seller_fee_basis_points, creators, collection, uses
   const dataV2Parts: Buffer[] = [
@@ -255,6 +268,13 @@ async function main() {
     console.log("   ✅ Metadata created:", metadataPda.toString());
     console.log("   📝 Name:", TOKEN_NAME);
     console.log("   🏷️  Symbol:", TOKEN_SYMBOL);
+    if (metadataUriToUse) {
+      console.log("   🔗 Metadata URI:", metadataUriToUse);
+    } else {
+      console.log("   ⚠️  No metadata URI provided - token will not display image/description");
+      console.log("   💡 To add image/description, set METADATA_URI or --metadataUri pointing to a JSON file with:");
+      console.log('      { "name": "...", "symbol": "...", "description": "...", "image": "https://..." }');
+    }
     console.log("");
   } catch (error: any) {
     console.error("   ❌ Metadata creation failed:", error.message);
@@ -463,6 +483,9 @@ async function main() {
     programId: program.programId.toString(),
     mint: mintKeypair.publicKey.toString(),
     metadata: metadataPda.toString(),
+    metadataUri: METADATA_URI || null,
+    tokenImage: TOKEN_IMAGE || null,
+    tokenDescription: TOKEN_DESCRIPTION || null,
     statePda: statePda.toString(),
     tokenAccount: tokenAccount.toString(),
     totalSupply: Number(TOTAL_SUPPLY),
@@ -484,6 +507,9 @@ async function main() {
   console.log("   Program ID:", deploymentInfo.programId);
   console.log("   Mint:", deploymentInfo.mint);
   console.log("   Metadata:", deploymentInfo.metadata);
+  if (deploymentInfo.metadataUri) {
+    console.log("   Metadata URI:", deploymentInfo.metadataUri);
+  }
   console.log("   State PDA:", deploymentInfo.statePda);
   console.log("   Token Account:", deploymentInfo.tokenAccount);
   console.log("   Total Supply:", deploymentInfo.totalSupply.toLocaleString());
