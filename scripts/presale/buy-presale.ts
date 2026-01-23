@@ -1,10 +1,10 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../../target/types/presale";
-import { PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import * as path from "path";
-import * as fs from "fs";
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import * as fs from "fs";
+import * as path from "path";
+import { Presale } from "../../target/types/presale";
 
 async function main() {
   const solAmount = parseFloat(process.argv[2] || "0.1"); // Default 0.1 SOL
@@ -118,16 +118,14 @@ async function main() {
   );
 
   // Chainlink SOL/USD feed addresses
-  // Note: The Chainlink OCR2 program ID is the same on both devnet and mainnet
-  // Since our program only validates the feed owner (Chainlink OCR2), we can use
-  // the mainnet feed address for both networks. The program will accept any feed
-  // owned by the Chainlink OCR2 program.
-  const CHAINLINK_SOL_USD_FEED = new PublicKey("CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
+  // Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt
+  // Devnet: 99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR
+  const CHAINLINK_SOL_USD_MAINNET = new PublicKey("CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
+  const CHAINLINK_SOL_USD_DEVNET = new PublicKey("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
   
-  // Use the same feed for both devnet and mainnet
-  // The program validates owner == Chainlink OCR2 program, not the specific address
-  const chainlinkFeed = CHAINLINK_SOL_USD_FEED;
+  // Select feed based on network
   const isMainnet = connection.rpcEndpoint.includes("mainnet");
+  const chainlinkFeed = isMainnet ? CHAINLINK_SOL_USD_MAINNET : CHAINLINK_SOL_USD_DEVNET;
 
   console.log("🛒 Buying presale tokens...");
   console.log("   SOL Amount:", solAmount, "SOL");

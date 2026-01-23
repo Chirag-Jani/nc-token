@@ -179,7 +179,9 @@ ts-node scripts/start-presale.ts
 #
 # 1. Save all PDAs: Keep deployments/deployment-info.json and presale-deployments/deployment-info.json safe
 # 2. Governance Cooldown: 7-day cooldown for authority transfer
-# 3. Chainlink Feed: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU (use for both devnet/mainnet)
+# 3. Chainlink Feeds:
+#    - Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt
+#    - Devnet: 99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR
 # 4. Token Price Format: token_price_usd_micro is in micro-USD (1000 = $0.001 per token)
 # 5. Migration: Only needed if upgrading from old structure (tokens_per_sol)
 #    Run: TOKEN_PRICE_USD_MICRO=1000 anchor run migrate-presale-pricing

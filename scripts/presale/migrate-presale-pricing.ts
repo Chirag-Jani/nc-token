@@ -1,9 +1,9 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Presale } from "../../target/types/presale";
-import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
-import * as path from "path";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import * as fs from "fs";
+import * as path from "path";
+import { Presale } from "../../target/types/presale";
 
 /**
  * Migration Script: Migrate Presale to Chainlink Oracle Pricing
@@ -281,10 +281,11 @@ async function main() {
     console.log("");
     console.log("📌 Next Steps:");
     console.log("   1. Update your frontend to pass Chainlink SOL/USD feed account");
-    console.log("   2. Chainlink SOL/USD feed: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
-    console.log("   3. Note: Use mainnet feed for both devnet and mainnet (no devnet feed available)");
-    console.log("   4. Program validates feed owner (Chainlink OCR2), not specific address");
-    console.log("   5. Test buy_with_sol with the Chainlink feed account");
+    console.log("   2. Chainlink SOL/USD feeds:");
+    console.log("      - Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
+    console.log("      - Devnet: 99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
+    console.log("   3. Program validates feed owner (Chainlink OCR2), not specific address");
+    console.log("   4. Test buy_with_sol with the Chainlink feed account");
 
   } catch (err: any) {
     console.error("❌ Migration failed:", err.message);

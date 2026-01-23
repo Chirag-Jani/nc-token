@@ -1,22 +1,22 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import {
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-    createAssociatedTokenAccountInstruction,
-    createInitializeMintInstruction,
-    createMintToInstruction,
-    getAssociatedTokenAddress,
-    getMinimumBalanceForRentExemptMint,
-    MINT_SIZE,
-    TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
+  createInitializeMintInstruction,
+  createMintToInstruction,
+  getAssociatedTokenAddress,
+  getMinimumBalanceForRentExemptMint,
+  MINT_SIZE,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
-    Keypair,
-    LAMPORTS_PER_SOL,
-    PublicKey,
-    sendAndConfirmTransaction,
-    SystemProgram,
-    Transaction,
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  sendAndConfirmTransaction,
+  SystemProgram,
+  Transaction,
 } from "@solana/web3.js";
 import { expect } from "chai";
 import { Governance } from "../target/types/governance";
@@ -24,14 +24,16 @@ import { Presale } from "../target/types/presale";
 import { SplProject } from "../target/types/spl_project";
 import { loadTestKeys } from "./key-loader";
 
-// Chainlink SOL/USD feed address
-// Note: There is no devnet feed available, so we use the mainnet feed for both networks
-// The program validates feed owner (Chainlink OCR2 program), not the specific address
-const CHAINLINK_SOL_USD_FEED = new PublicKey("CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU");
+// Chainlink SOL/USD feed addresses
+// Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt
+// Devnet: 99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR
+const CHAINLINK_SOL_USD_MAINNET = new PublicKey("CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
+const CHAINLINK_SOL_USD_DEVNET = new PublicKey("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
 
-// Helper to get Chainlink feed (same for all networks)
+// Helper to get Chainlink feed based on cluster
 function getChainlinkFeed(): PublicKey {
-  return CHAINLINK_SOL_USD_FEED;
+  // For tests, use devnet feed
+  return CHAINLINK_SOL_USD_DEVNET;
 }
 
 /**

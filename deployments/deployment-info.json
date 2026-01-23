@@ -1,15 +1,15 @@
 {
-  "network": "https://api.devnet.solana.com",
+  "network": "https://mainnet.helius-rpc.com/?api-key=519f61a1-0ac3-43b0-8037-f33a83718978",
   "wallet": "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj",
-  "deployedAt": "2026-01-22T10:55:27.844Z",
-  "metadata": "71C9bb7ptYBNYYa35PKq2PVJDr1eE3Zv9fBYQGXPqdJn",
-  "programId": "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw",
-  "mintAddress": "nMxyv5FMHHM98SZMMQv93R1cY6txkKByQTWh9v98UqQ",
-  "statePda": "D5sj5en4NNvxvxoNY3UtYPPUSE2LWYLsgnLc9UupR2sE",
-  "tokenAccount": "9ocRtwSwNvqFCsPrNJwd8t3UXAATFNfrK4S25U5TwTxE",
+  "deployedAt": "2026-01-23T05:45:32.027Z",
+  "metadata": "AB9hVPnxbeFNY1hEHS9vL718w8efGhTW7eVQhYrwijdH",
+  "programId": "6GYb43UvYNuy7dHj495V2euT2Dx3oDKtvFkuYaDj5Kmo",
+  "mintAddress": "CMgrXFXeiRuiwpiyhga2BiPQDxDBwbyqq5Re3KQUMCev",
+  "statePda": "D73VL1a9X9ub1NZRy7FmPCv7QxCbchtNwmhJTJqk3C3E",
+  "tokenAccount": "HjVcom4wMUNDmSqUZxLukab4tVCtuHkjoohGSScmhduS",
   "totalSupply": "30000000000",
-  "governanceProgramId": "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92",
-  "governanceStatePda": "DKERdrvubinusewUqYLK9fLypgpS6tcWSzX2CwoNy7wC",
+  "governanceProgramId": "eFgtAai6S3N3dygPG9ajxxHVQJ2evn1o5sZ3LjmYqAL",
+  "governanceStatePda": "JCEhvt8aVtjZ1XExRFfbxrSqMSf77HUXhbnUjE698Zh4",
   "requiredApprovals": 2,
   "cooldownPeriod": 1800,
   "signers": [
@@ -18,7 +18,7 @@
     "8UvcoXkL5epY5e3Q3KFv5EqWLCnTz3ZcmcGfbVjyvQzZ",
     "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj"
   ],
-  "presaleProgramId": "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX",
-  "presaleStatePda": "5zCvsh7gd6xQZVJenWBuPvVkniUdvB1dX9Eupo8D3kvL",
+  "presaleProgramId": "8DAZJvKw8LzpZMi5aQ3Nj3UZ2LEmL3ieiS7g9E7Gzxyx",
+  "presaleStatePda": "FcZd9nRYqf6YMVrgLwZrkiCA8RzRGL1B27jJy5knmtpW",
   "treasuryAddress": "7AR2iUkdY6PR5abRRrHfgcLkSJjEKmLBg7CjNcWd9kri"
 }

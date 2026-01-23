@@ -247,8 +247,8 @@ async function main() {
 
   // 6. Check oracle is accessible
   console.log("6️⃣ Checking oracle...");
-  const CHAINLINK_FEED_DEVNET = new PublicKey("HgTtcbcmp5BeThax5AU8vg4VwK79Tav1seX3yDX5hsjv");
-  const CHAINLINK_FEED_MAINNET = new PublicKey("H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG");
+  const CHAINLINK_FEED_DEVNET = new PublicKey("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
+  const CHAINLINK_FEED_MAINNET = new PublicKey("CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
   
   const endpoint = connection.rpcEndpoint;
   const isMainnet = endpoint.includes("mainnet");

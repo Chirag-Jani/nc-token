@@ -1,8 +1,8 @@
 {
-  "presaleProgramId": "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX",
-  "presaleStatePda": "5zCvsh7gd6xQZVJenWBuPvVkniUdvB1dX9Eupo8D3kvL",
-  "tokenProgramId": "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw",
-  "mintAddress": "nMxyv5FMHHM98SZMMQv93R1cY6txkKByQTWh9v98UqQ",
-  "network": "https://api.devnet.solana.com",
-  "deployedAt": "2026-01-22T10:57:44.834Z"
+  "presaleProgramId": "8DAZJvKw8LzpZMi5aQ3Nj3UZ2LEmL3ieiS7g9E7Gzxyx",
+  "presaleStatePda": "FcZd9nRYqf6YMVrgLwZrkiCA8RzRGL1B27jJy5knmtpW",
+  "tokenProgramId": "6GYb43UvYNuy7dHj495V2euT2Dx3oDKtvFkuYaDj5Kmo",
+  "mintAddress": "CMgrXFXeiRuiwpiyhga2BiPQDxDBwbyqq5Re3KQUMCev",
+  "network": "https://mainnet.helius-rpc.com/?api-key=519f61a1-0ac3-43b0-8037-f33a83718978",
+  "deployedAt": "2026-01-23T05:45:47.669Z"
 }

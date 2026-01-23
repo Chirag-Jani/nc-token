@@ -5,11 +5,11 @@ import {
   PublicKey,
   clusterApiUrl,
 } from "@solana/web3.js";
-import * as path from "path";
 import * as fs from "fs";
-import { SplProject } from "../../target/types/spl_project";
+import * as path from "path";
 import { Governance } from "../../target/types/governance";
 import { Presale } from "../../target/types/presale";
+import { SplProject } from "../../target/types/spl_project";
 
 interface HealthCheckResult {
   component: string;
@@ -153,9 +153,9 @@ async function checkPresaleProgram(
 
 async function checkOracle(connection: Connection): Promise<HealthCheckResult> {
   // Chainlink SOL/USD feed on devnet
-  const CHAINLINK_FEED_DEVNET = new PublicKey("HgTtcbcmp5BeThax5AU8vg4VwK79Tav1seX3yDX5hsjv");
+  const CHAINLINK_FEED_DEVNET = new PublicKey("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
   // Chainlink SOL/USD feed on mainnet
-  const CHAINLINK_FEED_MAINNET = new PublicKey("H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG");
+  const CHAINLINK_FEED_MAINNET = new PublicKey("CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
   
   const endpoint = connection.rpcEndpoint;
   const isMainnet = endpoint.includes("mainnet");

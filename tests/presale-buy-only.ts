@@ -71,7 +71,8 @@ describe("Presale Buy Function Test", () => {
   let solVault: PublicKey;
   let buyerPresaleTokenAccount: PublicKey;
 
-  // Chainlink SOL/USD feed (same for devnet and mainnet)
+  // Chainlink SOL/USD feed for devnet (tests run on devnet/localnet)
+  // Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt
   const CHAINLINK_SOL_USD_FEED = new PublicKey("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
 
   // SOL amount to spend (0.01 SOL)

@@ -39,7 +39,8 @@
     "@metaplex-foundation/mpl-token-metadata": "^3.2.1",
     "@solana/spl-token": "^0.4.8",
     "@solana/web3.js": "^1.95.2",
-    "bs58": "^4.0.1"
+    "bs58": "^4.0.1",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

@@ -5,16 +5,16 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.devnet]
-governance = "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92"
-presale = "czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX"
-spl_project = "DKbva7eM4omfhKh6pGTafVPFrrUNHdFaDRGcw7srqtuw"
+[programs.mainnet]
+governance = "eFgtAai6S3N3dygPG9ajxxHVQJ2evn1o5sZ3LjmYqAL"
+presale = "8DAZJvKw8LzpZMi5aQ3Nj3UZ2LEmL3ieiS7g9E7Gzxyx"
+spl_project = "6GYb43UvYNuy7dHj495V2euT2Dx3oDKtvFkuYaDj5Kmo"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "mainnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

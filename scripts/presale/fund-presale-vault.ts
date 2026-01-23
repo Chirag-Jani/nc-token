@@ -15,22 +15,31 @@ import {
 } from "@solana/web3.js";
 import * as path from "path";
 import * as fs from "fs";
+import * as dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 async function main() {
   // Get amount from CLI or use default 40M
   const amountArg = process.argv[2] || "40000000";
   const amount = BigInt(amountArg);
-  const decimals = 9;
+  const decimals = parseInt(process.env.TOKEN_DECIMALS || "8");
   const transferAmount = amount * BigInt(10 ** decimals);
 
-  const connection = new Connection(
-    process.env.ANCHOR_PROVIDER_URL || clusterApiUrl("devnet"),
-    "confirmed"
-  );
+  const rpcUrl = process.env.ANCHOR_PROVIDER_URL || clusterApiUrl("devnet");
+  console.log("🌐 Connecting to:", rpcUrl.includes("mainnet") ? "mainnet" : rpcUrl.includes("devnet") ? "devnet" : rpcUrl);
+  
+  const connection = new Connection(rpcUrl, "confirmed");
 
-  const walletPath = process.env.ANCHOR_WALLET || 
+  let walletPath = process.env.ANCHOR_WALLET || 
     path.join(process.env.HOME || process.env.USERPROFILE || "", 
               ".config", "solana", "id.json");
+  
+  // Expand ~ to home directory
+  if (walletPath.startsWith("~")) {
+    walletPath = walletPath.replace("~", process.env.HOME || process.env.USERPROFILE || "");
+  }
   
   const walletKeypair = Keypair.fromSecretKey(
     Buffer.from(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
@@ -84,11 +93,20 @@ async function main() {
     console.log("");
   }
   
-  // Get wallet's token account (where 100M tokens are)
-  const walletTokenAccount = await getAssociatedTokenAddress(
-    mintAddress,
-    walletKeypair.publicKey
-  );
+  // Get wallet's token account (where tokens are)
+  // First try to use the token account from deployment-info.json
+  // If not available, fall back to computing the ATA
+  let walletTokenAccount: PublicKey;
+  if (deploymentInfo.tokenAccount) {
+    walletTokenAccount = new PublicKey(deploymentInfo.tokenAccount);
+    console.log("   Using token account from deployment-info.json");
+  } else {
+    walletTokenAccount = await getAssociatedTokenAddress(
+      mintAddress,
+      walletKeypair.publicKey
+    );
+    console.log("   Using computed ATA as wallet token account");
+  }
 
   // Derive presale vault address (same mint, but owned by presale vault PDA)
   // The presale vault PDA is derived from presale program and mint

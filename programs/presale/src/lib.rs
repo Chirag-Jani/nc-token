@@ -35,7 +35,7 @@ use spl_project::program::SplProject;
 // #[allow(unused_imports)]
 // use governance::program::Governance;
 
-declare_id!("czzpLJobTSdLM7wL9NKWViHBPubCwKUxPsTpiGH6SRX");
+declare_id!("8DAZJvKw8LzpZMi5aQ3Nj3UZ2LEmL3ieiS7g9E7Gzxyx");
 
 // Constants for token account layout offsets
 pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
@@ -43,8 +43,8 @@ pub const TOKEN_ACCOUNT_OWNER_OFFSET: usize = 32;
 pub const TOKEN_STATE_EMERGENCY_PAUSED_OFFSET: usize = 41; // discriminator(8) + authority(32) + bump(1) = 41
 
 // Chainlink SOL/USD Price Feed Addresses
-// Mainnet: CH31XdtpZpi9vW9BsnU9989G8YyWdSuN7F9pX7o3N8xU
-// Devnet: Cp877Z9nU3qcS6nov97M679pUP8D6xW9Tz6TfU39iF (verify on Chainlink docs)
+// Mainnet: CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt
+// Devnet: 99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR
 // Chainlink OCR2 Program ID: HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny
 
 // Production feed verification: we hardcode ONLY the Chainlink OCR2 program ID.

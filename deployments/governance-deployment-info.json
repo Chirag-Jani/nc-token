@@ -1,6 +1,6 @@
 {
-  "programId": "9xDHkGqt58mN42youuoNH9v4X7gEmBKNDPymXyWkWR92",
-  "governanceStatePda": "DKERdrvubinusewUqYLK9fLypgpS6tcWSzX2CwoNy7wC",
+  "programId": "eFgtAai6S3N3dygPG9ajxxHVQJ2evn1o5sZ3LjmYqAL",
+  "governanceStatePda": "JCEhvt8aVtjZ1XExRFfbxrSqMSf77HUXhbnUjE698Zh4",
   "authority": "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj",
   "requiredApprovals": 2,
   "cooldownPeriod": 1800,
@@ -10,6 +10,6 @@
     "8UvcoXkL5epY5e3Q3KFv5EqWLCnTz3ZcmcGfbVjyvQzZ",
     "9Yhqmv2CvHwEzRLmQoSaz6z2C5xGngu5DqRgoNYpMPyj"
   ],
-  "network": "https://api.devnet.solana.com",
-  "deployedAt": "2026-01-22T10:57:44.834Z"
+  "network": "https://mainnet.helius-rpc.com/?api-key=519f61a1-0ac3-43b0-8037-f33a83718978",
+  "deployedAt": "2026-01-23T05:45:47.668Z"
 }
