@@ -14,6 +14,7 @@
     "presale:readiness": "ts-node scripts/presale/verify-readiness.ts",
     "presale:fund": "ts-node scripts/presale/fund-presale-vault.ts",
     "presale:set-treasury": "ts-node scripts/presale/set-treasury-address.ts",
+    "presale:transfer-authority": "ts-node scripts/presale/transfer-authority.ts",
     "governance:init": "ts-node scripts/governance/init-governance.ts",
     "governance:transfer": "ts-node scripts/governance/transfer-authority.ts",
     "governance:finalize": "ts-node scripts/governance/finalize-authority-transfer.ts",
