@@ -7,8 +7,9 @@ skip-lint = false
 
 [programs.mainnet]
 governance = "38iPVnmu4HXywjU4ivVjBLQUENFGGQXe5erx78niLkbK"
-presale = "7LkwkH3TpyhvCuVBEecFYbYk1T7c66qoYa2UpR9Q8LQj"
+presale = "2mVRhN7rnpFbjZd4gbYJ2vcAzHxE8YFMho6LAk4Y1mQu"
 spl_project = "Bp6PD8dSwGgESvbAZ6mismyDuemZ1cKZ9FC8JmNXZ9uw"
+vault_recover = "7LkwkH3TpyhvCuVBEecFYbYk1T7c66qoYa2UpR9Q8LQj"
 
 [registry]
 url = "https://api.apr.dev"

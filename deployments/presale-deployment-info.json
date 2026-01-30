@@ -1,8 +1,14 @@
 {
-  "presaleProgramId": "7LkwkH3TpyhvCuVBEecFYbYk1T7c66qoYa2UpR9Q8LQj",
-  "presaleStatePda": "DJ61PndtxEzLgEbuukmKQAGBeHr8vbvF5kkZWLFbNjng",
+  "presaleProgramId": "2mVRhN7rnpFbjZd4gbYJ2vcAzHxE8YFMho6LAk4Y1mQu",
   "tokenProgramId": "Bp6PD8dSwGgESvbAZ6mismyDuemZ1cKZ9FC8JmNXZ9uw",
-  "mintAddress": "EZqbnH1vttC6bdWFFMJfCMuVnyB5KCWF8k3WsmPoRUMD",
+  "presaleStatePda": "8DSkYCVaPo3Qa4De4EXGC5j9yxzHc3cXJoiBPYn7iLPm",
+  "tokenStatePda": "78bcciRThYeB1pdHwS9m9uPKJmwXHFdkMWwoV4h65qbb",
+  "presaleTokenMint": "EZqbnH1vttC6bdWFFMJfCMuVnyB5KCWF8k3WsmPoRUMD",
+  "presaleTokenVault": "8aW9GTGCqz6wKSxBzSPGSKsup8uubLevbgwYQaHKQtr8",
+  "presaleTokenVaultPda": "9VKmiVQcAx88CaMFBE61vtxk1jC9aaQKoRWiDSUCPXPg",
+  "admin": "8UvcoXkL5epY5e3Q3KFv5EqWLCnTz3ZcmcGfbVjyvQzZ",
+  "totalSupply": "1000000000",
+  "decimals": 8,
   "network": "https://mainnet.helius-rpc.com/?api-key=519f61a1-0ac3-43b0-8037-f33a83718978",
-  "deployedAt": "2026-01-23T11:06:03.608Z"
+  "deployedAt": "2026-01-27T09:26:33.890Z"
 }

@@ -39,6 +39,9 @@ const PRESALE_TOKEN_SUPPLY = BigInt(
   cliArgs.totalSupply || process.env.PRESALE_TOKEN_SUPPLY || "1000000000"
 );
 
+// Custom admin/authority - if set, uses this instead of wallet keypair
+const CUSTOM_ADMIN = cliArgs.admin || process.env.PRESALE_ADMIN || null;
+
 async function main() {
   console.log("🚀 Starting presale deployment...\n");
 
@@ -72,7 +75,16 @@ async function main() {
     Buffer.from(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
   );
 
-  console.log("📝 Wallet:", walletKeypair.publicKey.toString());
+  // Determine admin address (custom or wallet)
+  const adminPubkey = CUSTOM_ADMIN 
+    ? new PublicKey(CUSTOM_ADMIN) 
+    : walletKeypair.publicKey;
+
+  console.log("📝 Wallet (payer):", walletKeypair.publicKey.toString());
+  console.log("👤 Admin/Authority:", adminPubkey.toString());
+  if (CUSTOM_ADMIN) {
+    console.log("   ⚠️  Using custom admin (different from payer)");
+  }
   console.log("🌐 Network:", connection.rpcEndpoint);
   console.log("");
 
@@ -163,7 +175,7 @@ async function main() {
     
     const initTx = await presaleProgram.methods
       .initialize(
-        walletKeypair.publicKey, // admin
+        adminPubkey, // admin (custom or wallet)
         presaleTokenMint, // presale_token_mint (using main token mint)
         TOKEN_PROGRAM_ID, // token_program (SPL Token v1)
         tokenStatePda, // token_program_state
@@ -245,7 +257,7 @@ async function main() {
     presaleTokenMint: presaleTokenMint.toString(),
     presaleTokenVault: presaleTokenVault.toString(),
     presaleTokenVaultPda: presaleTokenVaultPda.toString(),
-    admin: walletKeypair.publicKey.toString(),
+    admin: adminPubkey.toString(),
     totalSupply: PRESALE_TOKEN_SUPPLY.toString(),
     decimals: PRESALE_TOKEN_DECIMALS,
     network: connection.rpcEndpoint,
@@ -266,7 +278,7 @@ async function main() {
   console.log("   Presale State PDA:", presaleStatePda.toString());
   console.log("   Presale Token Mint:", presaleTokenMint.toString());
   console.log("   Presale Token Vault:", presaleTokenVault.toString());
-  console.log("   Admin:", walletKeypair.publicKey.toString());
+  console.log("   Admin:", adminPubkey.toString());
   console.log("   Total Supply:", PRESALE_TOKEN_SUPPLY.toString());
   console.log("   Decimals:", PRESALE_TOKEN_DECIMALS);
   console.log("");
